@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QProcess, QThread, Signal
+from PySide6.QtCore import QEventLoop, Qt, QProcess, QThread, Signal
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -40,22 +42,27 @@ from wfs_studio.binaries import ensure_binary, installed_binary, repo_root
 from wfs_studio.copy_job import CopyResult, copy_titles
 from wfs_studio.extract import (
     ExtractRequest,
+    append_extract_chunk,
     build_args,
     format_command,
     parse_extract_line,
     recovery_warning,
 )
 from wfs_studio.gametdb import (
+    COVER_TIMEOUT,
     annotate,
     disc_urls,
-    download_bytes,
     download_titles,
+    fetch_png,
     load_cached,
+    read_cover_cache,
+    remember_cover,
+    remember_cover_miss,
 )
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.settings import load_settings, save_settings
 from wfs_studio.titles import TitleRecord, directory_size, scan_titles
-from wfs_studio.util import format_bytes
+from wfs_studio.util import format_bytes, progress_permille
 
 CHECK_COL = 0
 KIND_COL = 1
@@ -83,7 +90,8 @@ class ScanWorker(QThread):
 
 
 class SizeWorker(QThread):
-    sized = Signal(str, int)
+    # Qt's int signal is 32-bit and wraps any title larger than 2 GiB.
+    sized = Signal(object)
 
     def __init__(self, records: list[TitleRecord], cancel: threading.Event):
         super().__init__()
@@ -94,7 +102,10 @@ class SizeWorker(QThread):
         for record in self.records:
             if self.cancel.is_set():
                 return
-            self.sized.emit(str(record.path), directory_size(record.path, self.cancel))
+            size = directory_size(record.path, self.cancel)
+            if size is None or self.cancel.is_set():
+                return
+            self.sized.emit((str(record.path), size))
 
 
 class CopyWorker(QThread):
@@ -141,25 +152,43 @@ class FetchWorker(QThread):
 class CoverWorker(QThread):
     ready = Signal(int, object)
 
-    def __init__(self, generation: int, urls: list[str], cache_file: Path):
+    def __init__(
+        self,
+        generation: int,
+        urls: list[str],
+        cache: Path,
+        gametdb_id: str,
+        cancel: threading.Event,
+    ):
         super().__init__()
         self.generation = generation
         self.urls = urls
-        self.cache_file = cache_file
+        self.cache = cache
+        self.gametdb_id = gametdb_id
+        self.cancel = cancel
 
     def run(self) -> None:
-        if self.cache_file.is_file():
-            data = self.cache_file.read_bytes()
-            if data.startswith(b"\x89PNG"):
-                self.ready.emit(self.generation, data)
-                return
+        status, data = read_cover_cache(self.cache, self.gametdb_id)
+        if status == "hit":
+            self.ready.emit(self.generation, data)
+            return
+        if status == "miss":
+            self.ready.emit(self.generation, None)
+            return
+        definite_miss = True
         for url in self.urls:
-            data = download_bytes(url)
-            if data:
-                self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-                self.cache_file.write_bytes(data)
-                self.ready.emit(self.generation, data)
+            if self.cancel.is_set():
+                self.ready.emit(self.generation, None)
                 return
+            kind, downloaded = fetch_png(url, timeout=COVER_TIMEOUT)
+            if kind == "png" and downloaded:
+                remember_cover(self.cache, self.gametdb_id, downloaded)
+                self.ready.emit(self.generation, downloaded)
+                return
+            if kind != "missing":
+                definite_miss = False
+        if definite_miss and not self.cancel.is_set():
+            remember_cover_miss(self.cache, self.gametdb_id)
         self.ready.emit(self.generation, None)
 
 
@@ -180,6 +209,8 @@ class MainWindow(QMainWindow):
         self.database = load_cached(self.root / "cache")
         self._cancel_sizes = threading.Event()
         self._cancel_copy = threading.Event()
+        self._cancel_covers = threading.Event()
+        self._closing = False
         self._busy = False
         self._process: QProcess | None = None
         self._extract_buffer = ""
@@ -545,10 +576,14 @@ class MainWindow(QMainWindow):
 
     def _scan_failed(self, message: str) -> None:
         self.scan_button.setEnabled(True)
+        if self._closing:
+            return
         self.statusBar().showMessage("Scan failed")
         self._warn(message)
 
     def _scan_finished(self, records: list[TitleRecord]) -> None:
+        if self._closing:
+            return
         self.scan_button.setEnabled(True)
         self.records = annotate(records, self.database)
         self.sizes.clear()
@@ -607,7 +642,12 @@ class MainWindow(QMainWindow):
                 return record
         return None
 
-    def _size_ready(self, path: str, size: int) -> None:
+    def _size_ready(self, payload: object) -> None:
+        if self._closing or not isinstance(payload, tuple) or len(payload) != 2:
+            return
+        path, size = payload
+        if not isinstance(path, str) or not isinstance(size, int) or size < 0:
+            return
         self.sizes[path] = size
         for row in range(self.table.rowCount()):
             item = self.table.item(row, NAME_COL)
@@ -695,28 +735,39 @@ class MainWindow(QMainWindow):
         self._load_cover(record)
 
     def _load_cover(self, record: TitleRecord) -> None:
+        if self._closing:
+            return
+        self._cancel_covers.set()
+        self._cancel_covers = threading.Event()
         self._cover_generation += 1
         generation = self._cover_generation
         self.cover_label.setPixmap(QPixmap())
         if not record.gametdb_id:
             self.cover_label.setText("No disc image")
             return
+        status, data = read_cover_cache(self.root / "cache", record.gametdb_id)
+        if status == "hit" and isinstance(data, (bytes, bytearray)):
+            self._show_cover(data)
+            return
+        if status == "miss":
+            self.cover_label.setText("No disc image")
+            return
         self.cover_label.setText("Loading disc")
-        cache_file = self.root / "cache" / "covers" / f"{record.gametdb_id}.png"
-        worker = CoverWorker(generation, disc_urls(record.gametdb_id, record.region), cache_file)
+        worker = CoverWorker(
+            generation,
+            disc_urls(record.gametdb_id, record.region),
+            self.root / "cache",
+            record.gametdb_id,
+            self._cancel_covers,
+        )
         worker.ready.connect(self._cover_ready)
         self._track(worker)
 
-    def _cover_ready(self, generation: int, data: object) -> None:
-        if generation != self._cover_generation:
-            return
-        if not isinstance(data, (bytes, bytearray)):
-            self.cover_label.setText("No disc image")
-            self.cover_label.setPixmap(QPixmap())
-            return
+    def _show_cover(self, data: bytes | bytearray) -> None:
         pixmap = QPixmap()
         if not pixmap.loadFromData(bytes(data)):
             self.cover_label.setText("No disc image")
+            self.cover_label.setPixmap(QPixmap())
             return
         scaled = pixmap.scaled(
             self.cover_label.size(),
@@ -725,6 +776,15 @@ class MainWindow(QMainWindow):
         )
         self.cover_label.setText("")
         self.cover_label.setPixmap(scaled)
+
+    def _cover_ready(self, generation: int, data: object) -> None:
+        if self._closing or generation != self._cover_generation:
+            return
+        if not isinstance(data, (bytes, bytearray)):
+            self.cover_label.setText("No disc image")
+            self.cover_label.setPixmap(QPixmap())
+            return
+        self._show_cover(data)
 
     def _download_db(self) -> None:
         self.db_button.setEnabled(False)
@@ -735,6 +795,8 @@ class MainWindow(QMainWindow):
         self._track(worker)
 
     def _db_ready(self, database) -> None:
+        if self._closing:
+            return
         self.database = database
         self.db_button.setEnabled(True)
         self.records = annotate(self.records, database)
@@ -745,6 +807,8 @@ class MainWindow(QMainWindow):
 
     def _db_failed(self, message: str) -> None:
         self.db_button.setEnabled(True)
+        if self._closing:
+            return
         self.statusBar().showMessage("GameTDB download failed")
         self._warn(message)
 
@@ -817,11 +881,9 @@ class MainWindow(QMainWindow):
         self._track(worker)
 
     def _copy_progress(self, progress) -> None:
-        if progress.total_bytes > 0:
-            value = int(progress.copied_bytes * 1000 / progress.total_bytes)
-            self.copy_progress.setValue(min(value, 1000))
-        else:
-            self.copy_progress.setValue(0)
+        if self._closing:
+            return
+        self.copy_progress.setValue(progress_permille(progress.copied_bytes, progress.total_bytes))
         amount = (
             f"{format_bytes(progress.copied_bytes)} of {format_bytes(progress.total_bytes)}"
             if progress.total_bytes
@@ -835,9 +897,14 @@ class MainWindow(QMainWindow):
 
     def _copy_finished(self, result: CopyResult) -> None:
         self._busy = False
+        if self._closing:
+            return
         self.copy_button.setEnabled(True)
         self.cancel_copy_button.setEnabled(False)
-        if result.cancelled:
+        if result.halted:
+            self.copy_label.setText(result.halted)
+            self.statusBar().showMessage("Copy stopped")
+        elif result.cancelled:
             self.copy_label.setText("Stopped. Files already written were left in the destination.")
             self.statusBar().showMessage("Copy stopped")
         else:
@@ -849,11 +916,13 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Copy finished")
         for error in result.errors:
             self.copy_log.appendPlainText(error)
-        if not result.errors and not result.cancelled:
+        if not result.errors and not result.cancelled and not result.halted:
             self.copy_log.appendPlainText("Copy finished.")
 
     def _copy_failed(self, message: str) -> None:
         self._busy = False
+        if self._closing:
+            return
         self.copy_button.setEnabled(True)
         self.cancel_copy_button.setEnabled(False)
         self.copy_label.setText("Copy failed")
@@ -881,6 +950,8 @@ class MainWindow(QMainWindow):
         self._track(worker)
 
     def _binary_ready(self, path: Path) -> None:
+        if self._closing:
+            return
         self.binary_button.setEnabled(True)
         self._refresh_binary_label()
         self._refresh_command()
@@ -888,6 +959,8 @@ class MainWindow(QMainWindow):
 
     def _binary_failed(self, message: str) -> None:
         self.binary_button.setEnabled(True)
+        if self._closing:
+            return
         self.statusBar().showMessage("wfs-tools download failed")
         self._warn(message)
 
@@ -995,12 +1068,15 @@ class MainWindow(QMainWindow):
         if self._process is None:
             return
         data = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        self._extract_buffer += data
-        while "\n" in self._extract_buffer:
-            line, self._extract_buffer = self._extract_buffer.split("\n", 1)
-            self._handle_extract_line(line.rstrip("\r"))
+        if self._closing:
+            return
+        self._extract_buffer, lines = append_extract_chunk(self._extract_buffer, data)
+        for line in lines:
+            self._handle_extract_line(line)
 
     def _handle_extract_line(self, line: str) -> None:
+        if len(line) > 4096:
+            line = line[:4096]
         event = parse_extract_line(line)
         if event["event"] == "blank":
             return
@@ -1017,6 +1093,9 @@ class MainWindow(QMainWindow):
             self.extract_label.setText(event["path"])
 
     def _extract_finished(self, code: int, _status) -> None:
+        if self._closing:
+            self._extract_buffer = ""
+            return
         if self._extract_buffer.strip():
             self._handle_extract_line(self._extract_buffer.strip())
             self._extract_buffer = ""
@@ -1032,7 +1111,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Extract failed")
 
     def _extract_error(self, _error) -> None:
-        if self._process is None:
+        if self._closing or self._process is None:
             return
         message = self._process.errorString()
         if message:
@@ -1063,6 +1142,9 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event) -> None:
+        if self._closing:
+            event.accept()
+            return
         copying = self._busy
         extracting = (
             self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning
@@ -1076,16 +1158,42 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            self._cancel_copy.set()
-            self._cancel_sizes.set()
-            if extracting and self._process is not None:
-                self._process.kill()
-        else:
-            self._cancel_sizes.set()
-        self._persist()
-        for worker in list(self._workers):
-            worker.wait(1500)
+        self._closing = True
+        self._cancel_copy.set()
+        self._cancel_sizes.set()
+        self._cancel_covers.set()
+        if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:
+            self._process.kill()
+            self._process.waitForFinished(3000)
+        try:
+            self._persist()
+        except OSError:
+            pass
+        self._join_workers()
         event.accept()
+
+    def _join_workers(self) -> None:
+        """Let worker threads finish before Qt destroys them.
+
+        Waiting on the GUI thread does not deliver queued signals. Signals
+        are blocked first so a late result cannot open a dialog or start
+        another worker. One blocking call, such as the current copy block
+        or a cover download, is given a few seconds. If a thread is still
+        running after that, the process exits. Destroying a running
+        QThread aborts, and terminating a thread that is inside Python
+        is unsafe.
+        """
+        running = [worker for worker in list(self._workers) if worker.isRunning()]
+        for worker in running:
+            worker.blockSignals(True)
+        deadline = time.monotonic() + 12
+        while running and time.monotonic() < deadline:
+            if not any(worker.isRunning() for worker in running):
+                break
+            time.sleep(0.05)
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        if any(worker.isRunning() for worker in running):
+            os._exit(0)
 
 
 def apply_theme(app: QApplication) -> None:

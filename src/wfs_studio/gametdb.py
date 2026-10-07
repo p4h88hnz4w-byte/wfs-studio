@@ -6,6 +6,8 @@ Wii U product codes such as WUP-P-APKE use the first four of those characters.
 
 from __future__ import annotations
 
+import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -14,6 +16,8 @@ from wfs_studio.titles import TitleRecord
 
 TITLES_URL = "https://www.gametdb.com/wiiutdb.txt?LANG=EN"
 USER_AGENT = "wfs-studio/0.1"
+COVER_TIMEOUT = 5
+_COVER_ID = re.compile(r"^[A-Z0-9]{3,16}$")
 DISC_FOLDERS = {
     "USA": "US",
     "JPN": "JA",
@@ -146,13 +150,79 @@ def download_titles(cache: Path, timeout: float = 60) -> GameTdb:
     return parse_titles(data.decode("utf-8-sig"))
 
 
-def download_bytes(url: str, timeout: float = 20, limit: int = 2_000_000) -> bytes | None:
+def cover_paths(cache: Path, gametdb_id: str) -> tuple[Path, Path] | None:
+    """Return ``(png, miss marker)`` for a safe GameTDB id."""
+    ident = gametdb_id.strip().upper()
+    if not _COVER_ID.fullmatch(ident):
+        return None
+    folder = cache / "covers"
+    return folder / f"{ident}.png", folder / f"{ident}.missing"
+
+
+def read_cover_cache(cache: Path, gametdb_id: str) -> tuple[str, bytes | None]:
+    """Return ``('hit', png)``, ``('miss', None)``, or ``('absent', None)``."""
+    paths = cover_paths(cache, gametdb_id)
+    if paths is None:
+        return "miss", None
+    png, missing = paths
+    if png.is_file():
+        try:
+            data = png.read_bytes() if png.stat().st_size <= 2_000_000 else b""
+        except OSError:
+            data = b""
+        if data.startswith(b"\x89PNG"):
+            return "hit", data
+    if missing.is_file():
+        return "miss", None
+    return "absent", None
+
+
+def remember_cover(cache: Path, gametdb_id: str, data: bytes) -> None:
+    paths = cover_paths(cache, gametdb_id)
+    if paths is None or len(data) > 2_000_000 or not data.startswith(b"\x89PNG"):
+        return
+    png, missing = paths
+    png.parent.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(data)
+    missing.unlink(missing_ok=True)
+
+
+def remember_cover_miss(cache: Path, gametdb_id: str) -> None:
+    paths = cover_paths(cache, gametdb_id)
+    if paths is None:
+        return
+    _png, missing = paths
+    missing.parent.mkdir(parents=True, exist_ok=True)
+    missing.write_text("no-disc-image\n", encoding="utf-8")
+
+
+def fetch_png(url: str, timeout: float = 20, limit: int = 2_000_000) -> tuple[str, bytes | None]:
+    """Download one PNG.
+
+    Returns ``('png', data)``, ``('missing', None)`` for a not-found or
+    non-PNG response, or ``('error', None)`` for a timeout or other failure.
+    A later retry should skip the network only after ``missing``.
+    """
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = response.read(limit + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            if exc.code in {403, 404, 410}:
+                return "missing", None
+            return "error", None
+        finally:
+            exc.close()
     except Exception:
-        return None
+        return "error", None
     if len(data) > limit or not data.startswith(b"\x89PNG"):
+        return "missing", None
+    return "png", data
+
+
+def download_bytes(url: str, timeout: float = 20, limit: int = 2_000_000) -> bytes | None:
+    kind, data = fetch_png(url, timeout=timeout, limit=limit)
+    if kind != "png":
         return None
     return data

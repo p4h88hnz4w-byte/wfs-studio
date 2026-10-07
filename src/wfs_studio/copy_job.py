@@ -8,6 +8,7 @@ alone when its size already matches.
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import threading
@@ -19,6 +20,13 @@ from wfs_studio.paths import validate_copy
 
 CHUNK = 8 * 1024 * 1024
 PARTIAL_SUFFIX = ".wfs-studio-partial"
+_FULL_ERRNOS = {errno.ENOSPC}
+if hasattr(errno, "EDQUOT"):
+    _FULL_ERRNOS.add(errno.EDQUOT)
+
+
+def _disk_full(exc: OSError) -> bool:
+    return exc.errno in _FULL_ERRNOS
 
 
 class Cancelled(Exception):
@@ -45,10 +53,70 @@ class CopyResult:
     files_skipped: int
     errors: list[str] = field(default_factory=list)
     cancelled: bool = False
+    halted: str = ""
 
 
 def _ignored(name: str) -> bool:
     return name == ".DS_Store" or name.endswith(PARTIAL_SUFFIX)
+
+
+def _collect_files(
+    title: Path,
+    source_root: Path,
+    dest_root: Path,
+    cancel: threading.Event,
+) -> tuple[list[tuple[Path, Path, int]], list[str]]:
+    """List regular files to copy. Raises ``Cancelled`` or ``OSError`` for a full disk."""
+    planned: list[tuple[Path, Path, int]] = []
+    errors: list[str] = []
+    seen = 0
+    stack = [title]
+    while stack:
+        if cancel.is_set():
+            raise Cancelled()
+        current = stack.pop()
+        try:
+            relative_dir = current.relative_to(source_root)
+        except ValueError:
+            try:
+                relative_dir = current.resolve().relative_to(source_root)
+            except (ValueError, OSError):
+                errors.append(f"{current} is outside the source")
+                continue
+        try:
+            (dest_root / relative_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            if _disk_full(exc):
+                raise
+            errors.append(f"{relative_dir}: {exc}")
+            continue
+        try:
+            iterator = os.scandir(current)
+        except OSError as exc:
+            errors.append(f"{relative_dir}: {exc}")
+            continue
+        with iterator:
+            for entry in iterator:
+                seen += 1
+                if seen % 200 == 0 and cancel.is_set():
+                    raise Cancelled()
+                if _ignored(entry.name):
+                    continue
+                relative = relative_dir / entry.name
+                try:
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(Path(entry.path))
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    size = entry.stat(follow_symlinks=False).st_size
+                except OSError as exc:
+                    errors.append(f"{relative}: {exc}")
+                    continue
+                planned.append((Path(entry.path), dest_root / relative, size))
+    return planned, errors
 
 
 def _emit(on_progress, progress: CopyProgress, last: list[float], force: bool) -> None:
@@ -131,22 +199,23 @@ def copy_titles(
         if cancel.is_set():
             return CopyResult(0, 0, 0, 0, cancelled=True)
         title = title.expanduser().resolve()
-        for directory, _dirnames, filenames in os.walk(title, followlinks=False):
-            relative_dir = Path(directory).resolve().relative_to(source_root)
-            (dest_root / relative_dir).mkdir(parents=True, exist_ok=True)
-            for name in filenames:
-                if _ignored(name):
-                    continue
-                src = Path(directory) / name
-                if src.is_symlink():
-                    continue
-                relative = src.resolve().relative_to(source_root)
-                try:
-                    size = src.stat().st_size
-                except OSError as exc:
-                    errors.append(f"{relative}: {exc}")
-                    continue
-                planned.append((src, dest_root / relative, size))
+        try:
+            found, walk_errors = _collect_files(title, source_root, dest_root, cancel)
+        except Cancelled:
+            return CopyResult(0, 0, 0, 0, cancelled=True)
+        except OSError as exc:
+            if _disk_full(exc):
+                return CopyResult(
+                    0,
+                    0,
+                    0,
+                    0,
+                    [str(exc)],
+                    halted="Stopped. The destination ran out of space.",
+                )
+            raise
+        planned.extend(found)
+        errors.extend(walk_errors)
 
     total = sum(size for _src, _dest, size in planned)
     copied = 0
@@ -186,6 +255,15 @@ def copy_titles(
             copied = start
             errors.append(f"{display}: {exc}")
             snapshot(display, index, True)
+            if _disk_full(exc):
+                return CopyResult(
+                    copied,
+                    total,
+                    written,
+                    skipped,
+                    errors,
+                    halted="Stopped. The destination ran out of space. Completed files were left in place.",
+                )
             continue
         if outcome == "written":
             written += 1

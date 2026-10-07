@@ -18,10 +18,12 @@ The copy shows a progress bar and the path currently being written. `wfs-extract
 
 ## What you need
 
+Each person supplies their own console data. This repository does not include a Wii U drive image, games, `otp.bin`, or `seeprom.bin`.
+
 - Python 3.10 or newer. On this Mac the system Python is 3.9, and Homebrew Python 3.12 works.
-- The official `wfs-extract` build for your system. The app downloads v1.2.3 and checks its SHA-256.
-- For an encrypted image: `otp.bin`. USB images also need `seeprom.bin`.
-- For the Titles tab: an already extracted dump that contains `usr/title/<high-id>/<low-id>/meta/meta.xml`.
+- The official `wfs-extract` build for your system. The app downloads v1.2.3 and checks its SHA-256. Those binaries stay in gitignored `vendor/`.
+- Your own Wii U backup: an extracted dump with `usr/title/<high-id>/<low-id>/meta/meta.xml`, or an MLC/USB image from your console.
+- Your own `otp.bin` for an encrypted MLC or USB image. A USB image also needs your own `seeprom.bin`. The app passes those paths only to `wfs-extract` on the computer where you run it.
 
 A full USB or MLC extract can be hundreds of gigabytes. Pick a destination with enough free space.
 
@@ -44,7 +46,7 @@ python -m wfs_studio
 
 1. Choose the extracted dump, a `usr/title` folder, or one title folder.
 2. Scan. Names come from `longname_*` in `meta/meta.xml`.
-3. Download the GameTDB list when you want the database name and disc image. The file is `https://www.gametdb.com/wiiutdb.txt?LANG=EN`. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`.
+3. Download the GameTDB list when you want the database name and disc image. The app stores that list in `cache/wiiutdb.txt`, the same idea as WiiFlow keeping `wiitdb.zip` on the SD card. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`. Disc pictures are saved under `cache/covers/` after a successful download. GameTDB’s full cover packs, including DS and other systems, are separate downloads and are not bundled here.
 4. Check the titles to copy, choose a destination, and start the copy.
 
 The destination keeps the path relative to the scanned folder, for example `usr/title/00050000/101DF400/...`. Files that already exist at the destination with the same size are skipped. A different size is replaced.
@@ -79,4 +81,11 @@ cache/              GameTDB list, disc images, settings (gitignored)
 
 ## License
 
-WFS Studio is MIT, see `LICENSE`. `wfs-tools` remains under its own MIT license, copyright koolkdev.
+WFS Studio’s own source is MIT. See `LICENSE`.
+
+Other material stays under its own terms and is not relicensed by this MIT grant:
+
+- `third_party/wfs-tools` is MIT, copyright koolkdev. Keep that `LICENSE` file with the source.
+- The official wfs-tools release zips are downloaded at runtime into `vendor/`. They are not committed.
+- The GameTDB title list and artwork are fetched when you click Download GameTDB, then stored only in gitignored `cache/`. They are GameTDB’s database, not part of this source tree. GameTDB does not host game dumps.
+- NAND images, extracted titles, `otp.bin`, and `seeprom.bin` come from the user’s own console. `.gitignore` refuses those filenames. Do not add them to the repo.

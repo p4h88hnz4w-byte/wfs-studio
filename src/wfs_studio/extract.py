@@ -58,6 +58,32 @@ def recovery_warning(dump_path: str, enabled: bool) -> str | None:
     return None
 
 
+_EXTRACT_BUFFER_LIMIT = 1_048_576
+
+
+def append_extract_chunk(
+    buffer: str,
+    chunk: str,
+    limit: int = _EXTRACT_BUFFER_LIMIT,
+) -> tuple[str, list[str]]:
+    """Append extractor output and return complete lines plus the leftover.
+
+    The leftover stays within ``limit`` bytes. After a cut, bytes before the
+    first newline are dropped so a split line is not parsed as a path.
+    """
+    combined = buffer + chunk
+    if len(combined) > limit:
+        combined = combined[-limit:]
+        newline = combined.find("\n")
+        if newline != -1:
+            combined = combined[newline + 1 :]
+    lines: list[str] = []
+    while "\n" in combined:
+        line, combined = combined.split("\n", 1)
+        lines.append(line.rstrip("\r"))
+    return combined, lines
+
+
 def parse_extract_line(line: str) -> dict[str, str]:
     text = line.strip()
     if text.startswith("Dumping /"):

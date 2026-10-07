@@ -206,21 +206,43 @@ def iter_title_dirs(source: Path) -> list[Path]:
     return found
 
 
-def directory_size(path: Path, cancel=None) -> int:
+def directory_size(path: Path, cancel=None) -> int | None:
+    """Return the total size of regular files, or None if ``cancel`` is set.
+
+    A cancelled walk does not return a partial total. Symlinks are not followed.
+    The byte count is a Python int, so a title larger than 2 GiB stays positive.
+    """
     total = 0
-    for dirpath, _dirnames, filenames in os.walk(path, followlinks=False):
+    seen = 0
+    stack = [os.fspath(path)]
+    while stack:
         if cancel is not None and cancel.is_set():
-            return total
-        for name in filenames:
-            if name == ".DS_Store" or name.endswith(".wfs-studio-partial"):
-                continue
-            file_path = Path(dirpath) / name
-            if file_path.is_symlink():
-                continue
-            try:
-                total += file_path.stat().st_size
-            except OSError:
-                continue
+            return None
+        current = stack.pop()
+        try:
+            iterator = os.scandir(current)
+        except OSError:
+            continue
+        with iterator:
+            for entry in iterator:
+                seen += 1
+                if seen % 200 == 0 and cancel is not None and cancel.is_set():
+                    return None
+                name = entry.name
+                if name == ".DS_Store" or name.endswith(".wfs-studio-partial"):
+                    continue
+                try:
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                        continue
+                    if entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    continue
+    if cancel is not None and cancel.is_set():
+        return None
     return total
 
 
