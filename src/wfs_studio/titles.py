@@ -1,0 +1,279 @@
+"""Read Wii U title folders and their meta.xml names."""
+
+from __future__ import annotations
+
+import os
+import re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from pathlib import Path
+
+_HEX8 = re.compile(r"^[0-9a-fA-F]{8}$")
+_HEX16 = re.compile(r"^[0-9a-fA-F]{16}$")
+
+KIND_BY_HIGH = {
+    "00050000": "Game",
+    "00050002": "Demo",
+    "0005000b": "Shared data",
+    "0005000c": "DLC",
+    "0005000e": "Update",
+    "00050010": "System",
+    "0005001b": "System data",
+    "00050030": "Applet",
+}
+
+REGION_BITS = (
+    (0x01, "JPN"),
+    (0x02, "USA"),
+    (0x04, "EUR"),
+    (0x08, "AUS"),
+    (0x10, "CHN"),
+    (0x20, "KOR"),
+    (0x40, "TWN"),
+)
+
+_NAME_LANGS = ("en", "ja", "fr", "de", "es", "it", "nl", "pt", "ru", "ko", "zhtw", "zhcn")
+_PRODUCT_REGION = {
+    "E": "USA",
+    "J": "JPN",
+    "P": "EUR",
+    "K": "KOR",
+    "C": "CHN",
+    "W": "TWN",
+    "A": "ALL",
+}
+
+
+@dataclass(frozen=True)
+class TitleRecord:
+    source_root: Path
+    path: Path
+    high_id: str
+    low_id: str
+    kind: str
+    name: str
+    product_code: str
+    region: str
+    version: str
+    publisher: str
+    gametdb_id: str = ""
+    gametdb_name: str = ""
+
+    @property
+    def title_id(self) -> str:
+        if self.high_id and self.low_id:
+            return f"{self.high_id.upper()}-{self.low_id.upper()}"
+        return self.low_id.upper()
+
+    @property
+    def relative_path(self) -> Path:
+        return self.path.resolve().relative_to(self.source_root.resolve())
+
+
+def load_meta_text(path: Path) -> str:
+    raw = path.read_bytes()
+    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+        return raw.decode("utf-16")
+    sample = raw[:8]
+    if sample and sample.count(0) >= 2:
+        return raw.decode("utf-16-le", errors="replace")
+    return raw.decode("utf-8-sig", errors="replace")
+
+
+def meta_fields(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    try:
+        root = ET.fromstring(load_meta_text(path))
+    except ET.ParseError:
+        return {}
+    fields: dict[str, str] = {}
+    for element in root.iter():
+        tag = element.tag.split("}")[-1].strip().lower()
+        value = (element.text or "").strip()
+        if value and tag not in fields:
+            fields[tag] = value
+    return fields
+
+
+def _one_line(value: str) -> str:
+    """Wii U long names put a newline between the two lines on the menu."""
+    return " ".join(value.split())
+
+
+def _localized(fields: dict[str, str], prefix: str) -> str:
+    for lang in _NAME_LANGS:
+        value = _one_line(fields.get(f"{prefix}_{lang}", ""))
+        if value:
+            return value
+    for key, value in fields.items():
+        if key.startswith(prefix + "_") and value:
+            cleaned = _one_line(value)
+            if cleaned:
+                return cleaned
+    return ""
+
+
+def _parse_u32(value: str) -> int | None:
+    text = value.strip().lower()
+    if not text:
+        return None
+    try:
+        if text.startswith("0x") or re.fullmatch(r"[0-9a-f]{8}", text):
+            return int(text, 16)
+        if re.fullmatch(r"[0-9]+", text):
+            return int(text, 10)
+        if re.fullmatch(r"[0-9a-f]+", text):
+            return int(text, 16)
+    except ValueError:
+        return None
+    return None
+
+
+def format_region(value: str) -> str:
+    number = _parse_u32(value)
+    if number is None:
+        return value.strip()
+    if number in {0xFFFFFFFF, 0x7FFFFFFF}:
+        return "ALL"
+    names = [label for bit, label in REGION_BITS if number & bit]
+    if names:
+        return "+".join(names)
+    if number == 0:
+        return ""
+    return f"0x{number:08X}"
+
+
+def _region_from_product(product_code: str) -> str:
+    token = product_code.strip().upper().split("-")[-1]
+    if len(token) < 4:
+        return ""
+    return _PRODUCT_REGION.get(token[3], "")
+
+
+def _ids(directory: Path, fields: dict[str, str]) -> tuple[str, str]:
+    name = directory.name
+    parent = directory.parent.name
+    if _HEX8.fullmatch(name) and _HEX8.fullmatch(parent):
+        return parent.lower(), name.lower()
+    raw = fields.get("title_id", "").replace("-", "").strip()
+    if _HEX16.fullmatch(raw):
+        return raw[:8].lower(), raw[8:].lower()
+    if _HEX8.fullmatch(name):
+        return "", name.lower()
+    return "", name.lower()
+
+
+def _looks_like_title_root(path: Path) -> bool:
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return False
+    return any(child.is_dir() and _HEX8.fullmatch(child.name) for child in children)
+
+
+def iter_title_dirs(source: Path) -> list[Path]:
+    """Find title folders without walking game content."""
+    source = source.expanduser().resolve()
+    if (source / "meta" / "meta.xml").is_file():
+        return [source]
+    root = None
+    for candidate in (source / "usr" / "title", source / "title", source):
+        if candidate.is_dir() and _looks_like_title_root(candidate):
+            root = candidate
+            break
+    if root is None:
+        return []
+    found: list[Path] = []
+    for child in sorted(root.iterdir(), key=lambda item: item.name.lower()):
+        if not child.is_dir() or not _HEX8.fullmatch(child.name):
+            continue
+        if (child / "meta" / "meta.xml").is_file():
+            found.append(child)
+            continue
+        lows = sorted(
+            (
+                low
+                for low in child.iterdir()
+                if low.is_dir() and _HEX8.fullmatch(low.name)
+            ),
+            key=lambda item: item.name.lower(),
+        )
+        if lows:
+            found.extend(lows)
+        else:
+            found.append(child)
+    return found
+
+
+def directory_size(path: Path, cancel=None) -> int:
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(path, followlinks=False):
+        if cancel is not None and cancel.is_set():
+            return total
+        for name in filenames:
+            if name == ".DS_Store" or name.endswith(".wfs-studio-partial"):
+                continue
+            file_path = Path(dirpath) / name
+            if file_path.is_symlink():
+                continue
+            try:
+                total += file_path.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def scan_titles(source: Path) -> list[TitleRecord]:
+    if not source.expanduser().exists():
+        raise FileNotFoundError(f"Source folder does not exist: {source}")
+    source_root = source.expanduser().resolve()
+    records: list[TitleRecord] = []
+    games: dict[str, str] = {}
+    pending: list[TitleRecord] = []
+    for directory in iter_title_dirs(source_root):
+        fields = meta_fields(directory / "meta" / "meta.xml")
+        high_id, low_id = _ids(directory, fields)
+        kind = KIND_BY_HIGH.get(high_id, "Other" if high_id else "Folder")
+        name = _localized(fields, "longname") or _localized(fields, "shortname")
+        product = _one_line(fields.get("product_code", ""))
+        region = format_region(fields.get("region", "")) or _region_from_product(product)
+        version_number = _parse_u32(fields.get("title_version", ""))
+        version = "" if version_number is None else str(version_number)
+        publisher = _localized(fields, "publisher")
+        if not name:
+            name = "Unknown title"
+        record = TitleRecord(
+            source_root=source_root,
+            path=directory,
+            high_id=high_id,
+            low_id=low_id,
+            kind=kind,
+            name=name,
+            product_code=product,
+            region=region,
+            version=version,
+            publisher=publisher,
+        )
+        if kind == "Game" and name != "Unknown title":
+            games[low_id] = name
+        pending.append(record)
+    for record in pending:
+        if record.kind in {"Update", "DLC", "Demo"} and record.name == "Unknown title":
+            base = games.get(record.low_id)
+            if base:
+                record = TitleRecord(
+                    source_root=record.source_root,
+                    path=record.path,
+                    high_id=record.high_id,
+                    low_id=record.low_id,
+                    kind=record.kind,
+                    name=f"{record.kind} for {base}",
+                    product_code=record.product_code,
+                    region=record.region,
+                    version=record.version,
+                    publisher=record.publisher,
+                )
+        records.append(record)
+    records.sort(key=lambda item: (item.name.lower(), item.kind, item.title_id))
+    return records

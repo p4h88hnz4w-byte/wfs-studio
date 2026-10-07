@@ -1,0 +1,3 @@
+[submodule "third_party/wfs-tools"]
+	path = third_party/wfs-tools
+	url = https://github.com/koolkdev/wfs-tools.git

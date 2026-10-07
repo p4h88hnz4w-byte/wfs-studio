@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+cache/
+vendor/
+dist/
+build/
+*.egg-info/
+
+# Console keys and NAND images must never be committed.
+otp.bin
+seeprom.bin
+slc.bin
+slccmpt.bin
+mlc.bin
+*.img
+*.wux
+*.wud
