@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import os
+import queue
 import threading
 import time
+import zipfile
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, Qt, QProcess, QThread, Signal
@@ -39,7 +43,7 @@ from PySide6.QtWidgets import (
 
 from wfs_studio import __version__
 from wfs_studio.binaries import ensure_binary, installed_binary, repo_root
-from wfs_studio.copy_job import CopyResult, copy_titles
+from wfs_studio.copy_job import CopyResult, copy_game_data, copy_titles, game_folder_name
 from wfs_studio.extract import (
     ExtractRequest,
     append_extract_chunk,
@@ -53,15 +57,27 @@ from wfs_studio.gametdb import (
     annotate,
     disc_urls,
     download_titles,
+    fetch_cover,
     fetch_png,
-    load_cached,
+    index_cover_zip,
+    load_database,
+    load_zip,
     read_cover_cache,
+    read_zip_png,
     remember_cover,
     remember_cover_miss,
 )
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
+from wfs_studio.saves import SaveRecord, backup_saves, scan_saves
 from wfs_studio.settings import load_settings, save_settings
-from wfs_studio.titles import TitleRecord, directory_size, scan_titles
+from wfs_studio.titles import (
+    TitleRecord,
+    directory_size,
+    load_size_cache,
+    meta_stamp,
+    save_size_cache,
+    scan_titles,
+)
 from wfs_studio.util import format_bytes, progress_permille
 
 CHECK_COL = 0
@@ -93,19 +109,66 @@ class SizeWorker(QThread):
     # Qt's int signal is 32-bit and wraps any title larger than 2 GiB.
     sized = Signal(object)
 
-    def __init__(self, records: list[TitleRecord], cancel: threading.Event):
+    def __init__(
+        self,
+        records: list[TitleRecord],
+        cancel: threading.Event,
+        cache_path: Path | None = None,
+        refresh: bool = False,
+    ):
         super().__init__()
         self.records = records
         self.cancel = cancel
+        self.cache_path = cache_path
+        self.refresh = refresh
+
+    def _measure(self, record: TitleRecord, cache: dict, lock: threading.Lock) -> tuple[str, int] | None:
+        if self.cancel.is_set():
+            return None
+        key = str(record.path)
+        stamp = meta_stamp(record.path)
+        if not self.refresh and stamp:
+            with lock:
+                cached = cache.get(key)
+            if (
+                isinstance(cached, dict)
+                and cached.get("stamp") == stamp
+                and isinstance(cached.get("size"), int)
+            ):
+                return key, cached["size"]
+        size = directory_size(record.path, self.cancel)
+        if size is None or self.cancel.is_set():
+            return None
+        if self.cache_path is not None and stamp:
+            with lock:
+                cache[key] = {"size": size, "stamp": stamp}
+        return key, size
 
     def run(self) -> None:
-        for record in self.records:
-            if self.cancel.is_set():
-                return
-            size = directory_size(record.path, self.cancel)
-            if size is None or self.cancel.is_set():
-                return
-            self.sized.emit((str(record.path), size))
+        cache = load_size_cache(self.cache_path) if self.cache_path else {}
+        lock = threading.Lock()
+        results: queue.Queue[tuple[str, int] | None] = queue.Queue()
+
+        def measure(record: TitleRecord) -> None:
+            payload: tuple[str, int] | None = None
+            try:
+                payload = self._measure(record, cache, lock)
+            finally:
+                results.put(payload)
+
+        workers = min(4, max(1, len(self.records)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for record in self.records:
+                pool.submit(measure, record)
+            for _ in self.records:
+                payload = results.get()
+                if payload is not None:
+                    self.sized.emit(payload)
+        if self.cache_path is not None and not self.cancel.is_set():
+            with lock:
+                snapshot = dict(cache)
+            if snapshot:
+                save_size_cache(self.cache_path, snapshot)
 
 
 class CopyWorker(QThread):
@@ -113,19 +176,54 @@ class CopyWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, jobs, dest: Path, skip_same_size: bool, cancel: threading.Event):
+    def __init__(
+        self,
+        jobs,
+        dest: Path,
+        skip_same_size: bool,
+        cancel: threading.Event,
+        game_data: bool = False,
+    ):
         super().__init__()
         self.jobs = jobs
         self.dest = dest
         self.skip_same_size = skip_same_size
         self.cancel = cancel
+        self.game_data = game_data
 
     def run(self) -> None:
         try:
-            result = copy_titles(
+            copy = copy_game_data if self.game_data else copy_titles
+            result = copy(
                 self.jobs,
                 self.dest,
                 skip_same_size=self.skip_same_size,
+                cancel=self.cancel,
+                on_progress=self.progress.emit,
+            )
+            self.succeeded.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class SaveBackupWorker(QThread):
+    progress = Signal(object)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, records: list[SaveRecord], dest: Path, storage: str, cancel: threading.Event):
+        super().__init__()
+        self.records = records
+        self.dest = dest
+        self.storage = storage
+        self.cancel = cancel
+
+    def run(self) -> None:
+        try:
+            result = backup_saves(
+                self.records,
+                self.dest,
+                storage=self.storage,
                 cancel=self.cancel,
                 on_progress=self.progress.emit,
             )
@@ -175,19 +273,12 @@ class CoverWorker(QThread):
         if status == "miss":
             self.ready.emit(self.generation, None)
             return
-        definite_miss = True
-        for url in self.urls:
-            if self.cancel.is_set():
-                self.ready.emit(self.generation, None)
-                return
-            kind, downloaded = fetch_png(url, timeout=COVER_TIMEOUT)
-            if kind == "png" and downloaded:
-                remember_cover(self.cache, self.gametdb_id, downloaded)
-                self.ready.emit(self.generation, downloaded)
-                return
-            if kind != "missing":
-                definite_miss = False
-        if definite_miss and not self.cancel.is_set():
+        kind, downloaded = fetch_cover(self.urls, fetch_png, COVER_TIMEOUT, self.cancel)
+        if kind == "png" and downloaded:
+            remember_cover(self.cache, self.gametdb_id, downloaded)
+            self.ready.emit(self.generation, downloaded)
+            return
+        if kind == "missing" and not self.cancel.is_set():
             remember_cover_miss(self.cache, self.gametdb_id)
         self.ready.emit(self.generation, None)
 
@@ -206,16 +297,25 @@ class MainWindow(QMainWindow):
         self.settings = load_settings(self.root)
         self.records: list[TitleRecord] = []
         self.sizes: dict[str, int] = {}
-        self.database = load_cached(self.root / "cache")
+        self.database = load_database(self.root / "cache", self.settings.get("gametdb_zip"))
+        self._cover_index: dict[str, str] = {}
+        self._index_cover_zip()
         self._cancel_sizes = threading.Event()
         self._cancel_copy = threading.Event()
         self._cancel_covers = threading.Event()
+        self._sizing = False
+        self._size_done = 0
+        self._size_total = 0
+        self._size_generation = 0
         self._closing = False
         self._busy = False
         self._process: QProcess | None = None
         self._extract_buffer = ""
         self._files_started = 0
         self._cover_generation = 0
+        self._last_copy_was_game_data = False
+        self._cancel_saves = threading.Event()
+        self.save_records: list[SaveRecord] = []
         self._workers: list[QThread] = []
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
@@ -228,6 +328,7 @@ class MainWindow(QMainWindow):
     def _build(self) -> None:
         tabs = QTabWidget()
         tabs.addTab(self._build_titles_tab(), "Titles")
+        tabs.addTab(self._build_saves_tab(), "Saves")
         tabs.addTab(self._build_extract_tab(), "Extract")
         self.setCentralWidget(tabs)
         self.setStatusBar(QStatusBar())
@@ -268,10 +369,16 @@ class MainWindow(QMainWindow):
         self.db_label = QLabel()
         self.db_button = QPushButton("Download GameTDB")
         self.db_button.clicked.connect(self._download_db)
+        self.zip_button = QPushButton("Open zip")
+        self.zip_button.clicked.connect(self._open_db_zip)
+        self.banner_button = QPushButton("Banner zip")
+        self.banner_button.clicked.connect(self._open_banner_zip)
         filter_row.addWidget(QLabel("Search"))
         filter_row.addWidget(self.search_edit, 1)
         filter_row.addWidget(self.db_label)
         filter_row.addWidget(self.db_button)
+        filter_row.addWidget(self.zip_button)
+        filter_row.addWidget(self.banner_button)
         layout.addLayout(filter_row)
 
         body = QSplitter(Qt.Orientation.Horizontal)
@@ -315,10 +422,13 @@ class MainWindow(QMainWindow):
         none_button = QPushButton("Uncheck visible")
         none_button.clicked.connect(lambda: self._set_visible_checks(False))
         self.checked_label = QLabel("0 checked")
+        self.recount_button = QPushButton("Recount sizes")
+        self.recount_button.clicked.connect(self._recount_sizes)
         check_row.addWidget(all_button)
         check_row.addWidget(none_button)
         check_row.addWidget(self.checked_label)
         check_row.addStretch(1)
+        check_row.addWidget(self.recount_button)
         layout.addLayout(check_row)
 
         dest_row = QHBoxLayout()
@@ -334,6 +444,9 @@ class MainWindow(QMainWindow):
         self.skip_box = QCheckBox("Skip files that already exist with the same size")
         self.skip_box.setChecked(True)
         layout.addWidget(self.skip_box)
+        self.game_data_box = QCheckBox("Game data copy: one named folder per title, saves left behind")
+        self.game_data_box.setChecked(True)
+        layout.addWidget(self.game_data_box)
 
         action_row = QHBoxLayout()
         self.copy_button = QPushButton("Copy checked")
@@ -362,6 +475,179 @@ class MainWindow(QMainWindow):
         self.copy_log.setFixedHeight(110)
         layout.addWidget(self.copy_log)
         return page
+
+    def _build_saves_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        intro = QLabel(
+            "Copies usr/save into SaveMii folders on this computer. "
+            "The dump is not changed, and save contents are not edited. "
+            "Copy the backup folder to sd:/wiiu/backups when you want SaveMii to restore it."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.save_table = QTableWidget(0, 4)
+        self.save_table.setHorizontalHeaderLabels(["", "Name", "Title ID", "Profiles"])
+        self.save_table.verticalHeader().setVisible(False)
+        self.save_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.save_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        header = self.save_table.horizontalHeader()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self.save_table, 1)
+
+        dest_row = QHBoxLayout()
+        self.save_dest_edit = QLineEdit()
+        self.save_dest_edit.setPlaceholderText("PC folder that will hold the SaveMii backups")
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._browse_save_dest)
+        dest_row.addWidget(QLabel("Backup folder"))
+        dest_row.addWidget(self.save_dest_edit, 1)
+        dest_row.addWidget(browse)
+        layout.addLayout(dest_row)
+
+        self.save_usb_box = QCheckBox("This dump came from a USB drive (SaveMii will show USB instead of NAND)")
+        layout.addWidget(self.save_usb_box)
+
+        action_row = QHBoxLayout()
+        self.save_scan_button = QPushButton("Scan saves")
+        self.save_scan_button.clicked.connect(self._scan_saves)
+        self.save_backup_button = QPushButton("Back up checked")
+        self.save_backup_button.setObjectName("primary")
+        self.save_backup_button.clicked.connect(self._start_save_backup)
+        self.save_stop_button = QPushButton("Stop")
+        self.save_stop_button.setEnabled(False)
+        self.save_stop_button.clicked.connect(lambda: self._cancel_saves.set())
+        action_row.addWidget(self.save_scan_button)
+        action_row.addWidget(self.save_backup_button)
+        action_row.addWidget(self.save_stop_button)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.save_progress = QProgressBar()
+        self.save_progress.setRange(0, 1000)
+        self.save_progress.setValue(0)
+        self.save_progress.setFormat("%p%")
+        layout.addWidget(self.save_progress)
+        self.save_label = QLabel("Idle")
+        self.save_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.save_label)
+        self.save_log = QPlainTextEdit()
+        self.save_log.setReadOnly(True)
+        self.save_log.setMaximumBlockCount(500)
+        self.save_log.setFixedHeight(110)
+        layout.addWidget(self.save_log)
+        return page
+
+    def _browse_save_dest(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(self, "Save backup folder", self.save_dest_edit.text())
+        if chosen:
+            self.save_dest_edit.setText(chosen)
+            self._persist()
+
+    def _scan_saves(self) -> None:
+        source = self.source_edit.text().strip()
+        if not source:
+            self._warn("Choose a source folder on the Titles tab first.")
+            return
+        self._persist()
+        self.save_records = scan_saves(Path(source), self.database)
+        self.save_table.setRowCount(len(self.save_records))
+        for row, record in enumerate(self.save_records):
+            check = QTableWidgetItem()
+            check.setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable
+            )
+            check.setCheckState(Qt.CheckState.Unchecked)
+            self.save_table.setItem(row, 0, check)
+            self.save_table.setItem(row, 1, QTableWidgetItem(record.display_name))
+            self.save_table.setItem(row, 2, QTableWidgetItem(record.title_id))
+            profiles = ", ".join(record.profiles)
+            if record.has_common:
+                profiles = f"{profiles}, common" if profiles else "common"
+            self.save_table.setItem(row, 3, QTableWidgetItem(profiles or "none"))
+        self.save_label.setText(f"{len(self.save_records)} saves")
+        self.statusBar().showMessage(f"{len(self.save_records)} saves")
+
+    def _checked_saves(self) -> list[SaveRecord]:
+        chosen: list[SaveRecord] = []
+        for row, record in enumerate(self.save_records):
+            item = self.save_table.item(row, 0)
+            if item is not None and item.checkState() == Qt.CheckState.Checked:
+                chosen.append(record)
+        return chosen
+
+    def _start_save_backup(self) -> None:
+        if self._busy:
+            self._warn("Wait for the current job to finish.")
+            return
+        chosen = self._checked_saves()
+        if not chosen:
+            self._warn("Check at least one save.")
+            return
+        dest_text = self.save_dest_edit.text().strip()
+        if not dest_text:
+            self._warn("Choose a backup folder.")
+            return
+        self._persist()
+        storage = "USB" if self.save_usb_box.isChecked() else "NAND"
+        answer = QMessageBox.question(
+            self,
+            "Back up saves",
+            f"Back up {len(chosen)} saves into {dest_text}?\n\n"
+            "Files are copied only. The dump is not changed.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._busy = True
+        self._cancel_saves = threading.Event()
+        self.save_backup_button.setEnabled(False)
+        self.save_stop_button.setEnabled(True)
+        self.save_progress.setValue(0)
+        self.save_log.clear()
+        self.save_label.setText("Starting")
+        worker = SaveBackupWorker(chosen, Path(dest_text), storage, self._cancel_saves)
+        worker.progress.connect(self._save_progress)
+        worker.succeeded.connect(self._save_finished)
+        worker.failed.connect(self._save_failed)
+        self._track(worker)
+
+    def _save_progress(self, progress) -> None:
+        if self._closing:
+            return
+        self.save_progress.setValue(progress_permille(progress.copied_bytes, progress.total_bytes))
+        self.save_label.setText(f"{format_bytes(progress.copied_bytes)} · {progress.current_path}")
+
+    def _save_finished(self, result: CopyResult) -> None:
+        self._busy = False
+        if self._closing:
+            return
+        self.save_backup_button.setEnabled(True)
+        self.save_stop_button.setEnabled(False)
+        if result.cancelled:
+            self.save_label.setText("Stopped. Files already written were left in the backup folder.")
+        elif result.verified and not result.errors:
+            self.save_progress.setValue(1000 if result.total_bytes else 0)
+            self.save_label.setText(
+                f"Finished. Wrote {result.files_written}, skipped {result.files_skipped}."
+            )
+            self.save_log.appendPlainText("SaveMii folders match the source file count and byte total.")
+        else:
+            self.save_label.setText(result.halted or "Backup finished with errors.")
+            for error in result.errors:
+                self.save_log.appendPlainText(error)
+        self.statusBar().showMessage("Save backup finished")
+
+    def _save_failed(self, message: str) -> None:
+        self._busy = False
+        if self._closing:
+            return
+        self.save_backup_button.setEnabled(True)
+        self.save_stop_button.setEnabled(False)
+        self.save_label.setText("Backup failed")
+        self.save_log.appendPlainText(message)
+        self._warn(message)
 
     def _build_extract_tab(self) -> QWidget:
         page = QWidget()
@@ -475,12 +761,15 @@ class MainWindow(QMainWindow):
         self.source_edit.setText(self.settings["source"])
         self.dest_edit.setText(self.settings["dest"])
         self.skip_box.setChecked(bool(self.settings["skip_same_size"]))
+        self.game_data_box.setChecked(bool(self.settings["game_data_copy"]))
         self.input_edit.setText(self.settings["input"])
         self.otp_edit.setText(self.settings["otp"])
         self.seeprom_edit.setText(self.settings["seeprom"])
         self.output_edit.setText(self.settings["output"])
         self.dump_edit.setText(self.settings["dump_path"] or "/")
         self.recovery_box.setChecked(bool(self.settings["dump_usr_dir"]))
+        self.save_dest_edit.setText(self.settings["save_dest"])
+        self.save_usb_box.setChecked(bool(self.settings["save_usb"]))
         kind = self.settings["extract_type"]
         {"usb": self.usb_radio, "mlc": self.mlc_radio, "plain": self.plain_radio}.get(
             kind, self.mlc_radio
@@ -492,6 +781,9 @@ class MainWindow(QMainWindow):
             "source": self.source_edit.text().strip(),
             "dest": self.dest_edit.text().strip(),
             "skip_same_size": self.skip_box.isChecked(),
+            "game_data_copy": self.game_data_box.isChecked(),
+            "save_dest": self.save_dest_edit.text().strip(),
+            "save_usb": self.save_usb_box.isChecked(),
             "input": self.input_edit.text().strip(),
             "extract_type": self._image_type(),
             "otp": self.otp_edit.text().strip(),
@@ -499,6 +791,8 @@ class MainWindow(QMainWindow):
             "output": self.output_edit.text().strip(),
             "dump_path": self.dump_edit.text().strip() or "/",
             "dump_usr_dir": self.recovery_box.isChecked(),
+            "gametdb_zip": self.settings.get("gametdb_zip", ""),
+            "cover_zip": self.settings.get("cover_zip", ""),
         }
 
     def _persist(self) -> None:
@@ -595,9 +889,41 @@ class MainWindow(QMainWindow):
                 "or at a single title folder with meta/meta.xml."
             )
             return
+        self._start_sizing(refresh=False)
+
+    def _recount_sizes(self) -> None:
+        if self._closing:
+            return
+        if not self.records:
+            self._warn("Scan a source folder first.")
+            return
+        for row in range(self.table.rowCount()):
+            size_item = self.table.item(row, SIZE_COL)
+            if isinstance(size_item, QTableWidgetItem):
+                self.table.blockSignals(True)
+                size_item.setText("…")
+                size_item.setData(Qt.ItemDataRole.UserRole, -1)
+                self.table.blockSignals(False)
+        self.sizes.clear()
+        self._update_checked_label()
+        self._start_sizing(refresh=True)
+
+    def _start_sizing(self, refresh: bool) -> None:
+        self._cancel_sizes.set()
         self._cancel_sizes = threading.Event()
-        worker = SizeWorker(list(self.records), self._cancel_sizes)
-        worker.sized.connect(self._size_ready)
+        self._sizing = True
+        self._size_done = 0
+        self._size_total = len(self.records)
+        self._size_generation += 1
+        generation = self._size_generation
+        self.statusBar().showMessage(f"Sizing 0 of {self._size_total}")
+        worker = SizeWorker(
+            list(self.records),
+            self._cancel_sizes,
+            cache_path=self.root / "cache" / "title-sizes.json",
+            refresh=refresh,
+        )
+        worker.sized.connect(lambda payload, generation=generation: self._size_ready(payload, generation))
         self._track(worker)
 
     def _fill_table(self) -> None:
@@ -642,13 +968,22 @@ class MainWindow(QMainWindow):
                 return record
         return None
 
-    def _size_ready(self, payload: object) -> None:
+    def _size_ready(self, payload: object, generation: int | None = None) -> None:
+        if generation is not None and generation != self._size_generation:
+            return
         if self._closing or not isinstance(payload, tuple) or len(payload) != 2:
             return
         path, size = payload
         if not isinstance(path, str) or not isinstance(size, int) or size < 0:
             return
         self.sizes[path] = size
+        if self._sizing:
+            self._size_done += 1
+            if self._size_done >= self._size_total:
+                self._sizing = False
+                self.statusBar().showMessage(f"{len(self.records)} titles")
+            else:
+                self.statusBar().showMessage(f"Sizing {self._size_done} of {self._size_total}")
         for row in range(self.table.rowCount()):
             item = self.table.item(row, NAME_COL)
             if item is not None and item.data(Qt.ItemDataRole.UserRole) == path:
@@ -662,6 +997,7 @@ class MainWindow(QMainWindow):
                     self.table.setSortingEnabled(sorting)
                     self.table.blockSignals(False)
                 break
+        self._update_checked_label()
 
     def _apply_filter(self) -> None:
         query = self.search_edit.text().strip().lower()
@@ -728,6 +1064,14 @@ class MainWindow(QMainWindow):
             lines.append(record.publisher)
         if record.gametdb_id:
             lines.append(f"GameTDB {record.gametdb_id}: {record.gametdb_name}")
+            info = self.database.info.get(record.gametdb_id) if self.database is not None else None
+            if info is not None:
+                credits = " · ".join(part for part in (info.developer, info.publisher) if part)
+                if credits:
+                    lines.append(credits)
+                facts = " · ".join(part for part in (info.date, info.genre, info.region) if part)
+                if facts:
+                    lines.append(facts)
         elif self.database is not None and record.product_code:
             lines.append("No GameTDB match for this product code.")
         lines.append(str(record.path))
@@ -744,6 +1088,10 @@ class MainWindow(QMainWindow):
         self.cover_label.setPixmap(QPixmap())
         if not record.gametdb_id:
             self.cover_label.setText("No disc image")
+            return
+        banner = self._banner_from_zip(record.gametdb_id)
+        if banner is not None:
+            self._show_cover(banner)
             return
         status, data = read_cover_cache(self.root / "cache", record.gametdb_id)
         if status == "hit" and isinstance(data, (bytes, bytearray)):
@@ -786,13 +1134,73 @@ class MainWindow(QMainWindow):
             return
         self._show_cover(data)
 
+    def _index_cover_zip(self) -> None:
+        path = Path(self.settings.get("cover_zip", ""))
+        self._cover_index = {}
+        if not path.is_file():
+            return
+        try:
+            self._cover_index = index_cover_zip(path)
+        except (OSError, zipfile.BadZipFile):
+            self._cover_index = {}
+
+    def _banner_from_zip(self, gametdb_id: str) -> bytes | None:
+        member = self._cover_index.get(gametdb_id)
+        path = Path(self.settings.get("cover_zip", ""))
+        if not member or not path.is_file():
+            return None
+        return read_zip_png(path, member)
+
+    def _open_db_zip(self) -> None:
+        if self._closing:
+            return
+        chosen, _selected = QFileDialog.getOpenFileName(
+            self,
+            "Open GameTDB zip",
+            self.settings.get("gametdb_zip", ""),
+            "Zip archives (*.zip)",
+        )
+        if not chosen:
+            return
+        try:
+            database = load_zip(Path(chosen))
+        except (OSError, zipfile.BadZipFile, ET.ParseError, RuntimeError) as exc:
+            self._warn(str(exc))
+            return
+        self.settings["gametdb_zip"] = chosen
+        self._persist()
+        self._db_ready(database)
+
+    def _open_banner_zip(self) -> None:
+        if self._closing:
+            return
+        chosen, _selected = QFileDialog.getOpenFileName(
+            self,
+            "Open banner zip",
+            self.settings.get("cover_zip", ""),
+            "Zip archives (*.zip)",
+        )
+        if not chosen:
+            return
+        self.settings["cover_zip"] = chosen
+        self._persist()
+        self._index_cover_zip()
+        count = len(self._cover_index)
+        self.statusBar().showMessage(f"Banner zip indexed, {count} images")
+        self._show_details()
+
     def _download_db(self) -> None:
         self.db_button.setEnabled(False)
         self.statusBar().showMessage("Downloading GameTDB")
         worker = FetchWorker(lambda: download_titles(self.root / "cache"))
-        worker.succeeded.connect(self._db_ready)
+        worker.succeeded.connect(self._downloaded_db)
         worker.failed.connect(self._db_failed)
         self._track(worker)
+
+    def _downloaded_db(self, database) -> None:
+        self.settings["gametdb_zip"] = ""
+        self._persist()
+        self._db_ready(database)
 
     def _db_ready(self, database) -> None:
         if self._closing:
@@ -857,11 +1265,16 @@ class MainWindow(QMainWindow):
             size_text = format_bytes(sum(size for size in known if size is not None))
         else:
             size_text = "size still counting"
+        game_data = self.game_data_box.isChecked()
+        if game_data:
+            detail = "Each title is written to its own folder. Save data under usr/save is not copied."
+        else:
+            detail = "The copy keeps the path relative to the source."
         answer = QMessageBox.question(
             self,
             "Copy titles",
             f"Copy {len(chosen)} titles ({size_text}) into {dest}?\n\n"
-            "Files are written only inside the destination. The source is not changed or deleted.",
+            f"{detail}\nThe source is not changed or deleted.",
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -873,8 +1286,15 @@ class MainWindow(QMainWindow):
         self.copy_progress.setValue(0)
         self.copy_log.clear()
         self.copy_label.setText("Counting files")
-        jobs = [(record.source_root, record.path) for record in chosen]
-        worker = CopyWorker(jobs, dest, self.skip_box.isChecked(), self._cancel_copy)
+        if game_data:
+            jobs = [
+                (record.path, game_folder_name(record.gametdb_name or record.name, record.title_id))
+                for record in chosen
+            ]
+        else:
+            jobs = [(record.source_root, record.path) for record in chosen]
+        self._last_copy_was_game_data = game_data
+        worker = CopyWorker(jobs, dest, self.skip_box.isChecked(), self._cancel_copy, game_data)
         worker.progress.connect(self._copy_progress)
         worker.succeeded.connect(self._copy_finished)
         worker.failed.connect(self._copy_failed)
@@ -917,7 +1337,10 @@ class MainWindow(QMainWindow):
         for error in result.errors:
             self.copy_log.appendPlainText(error)
         if not result.errors and not result.cancelled and not result.halted:
-            self.copy_log.appendPlainText("Copy finished.")
+            if self._last_copy_was_game_data and result.verified:
+                self.copy_log.appendPlainText("Destination file count and byte total match the source.")
+            else:
+                self.copy_log.appendPlainText("Copy finished.")
 
     def _copy_failed(self, message: str) -> None:
         self._busy = False
@@ -1160,6 +1583,7 @@ class MainWindow(QMainWindow):
                 return
         self._closing = True
         self._cancel_copy.set()
+        self._cancel_saves.set()
         self._cancel_sizes.set()
         self._cancel_covers.set()
         if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:

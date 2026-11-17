@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import shutil
 import threading
 import time
@@ -54,10 +55,63 @@ class CopyResult:
     errors: list[str] = field(default_factory=list)
     cancelled: bool = False
     halted: str = ""
+    verified: bool = False
 
 
 def _ignored(name: str) -> bool:
     return name == ".DS_Store" or name.endswith(PARTIAL_SUFFIX)
+
+
+_FOLDER_UNSAFE = re.compile(r'[/\\:\x00-\x1f]')
+
+
+def game_folder_name(title: str, title_id: str) -> str:
+    """Folder name for one title install. The title id keeps regions apart."""
+    cleaned = " ".join(_FOLDER_UNSAFE.sub(" ", title).split()).strip(" .")
+    if cleaned in {"", ".", ".."}:
+        cleaned = "Untitled"
+    ident = " ".join(title_id.split())
+    suffix = f" [{ident}]" if ident else ""
+    room = 120 - len(suffix)
+    if len(cleaned) > room:
+        cleaned = cleaned[: max(room, 1)].rstrip(" .") or "Untitled"
+    return f"{cleaned}{suffix}"
+
+
+def tree_totals(path: Path, cancel: threading.Event | None = None) -> tuple[int, int] | None:
+    """Return ``(file count, byte total)`` using the same skips as a copy."""
+    files = 0
+    total = 0
+    seen = 0
+    stack = [path]
+    while stack:
+        if cancel is not None and cancel.is_set():
+            return None
+        current = stack.pop()
+        try:
+            iterator = os.scandir(current)
+        except OSError:
+            continue
+        with iterator:
+            for entry in iterator:
+                seen += 1
+                if seen % 200 == 0 and cancel is not None and cancel.is_set():
+                    return None
+                if _ignored(entry.name):
+                    continue
+                try:
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(Path(entry.path))
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    total += entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    continue
+                files += 1
+    return files, total
 
 
 def _collect_files(
@@ -271,3 +325,83 @@ def copy_titles(
             skipped += 1
     snapshot("Done", len(planned), True)
     return CopyResult(copied, total, written, skipped, errors, cancelled=False)
+
+
+def copy_game_data(
+    jobs: list[tuple[Path, str]],
+    dest_root: Path,
+    *,
+    skip_same_size: bool,
+    cancel: threading.Event,
+    on_progress,
+) -> CopyResult:
+    """Copy each title install into its own named folder.
+
+    ``jobs`` is ``(title folder, folder name)``. Only that folder is read.
+    A save directory that sits elsewhere in the dump is not part of the job.
+    After a finished copy, the destination file count and byte total must
+    match the source.
+    """
+    if not jobs:
+        raise ValueError("No titles were selected.")
+    used: set[str] = set()
+    planned: list[tuple[Path, str]] = []
+    for title, folder_name in jobs:
+        name = folder_name.strip() or game_folder_name("", "")
+        candidate = name
+        number = 2
+        while candidate.casefold() in used:
+            candidate = f"{name} ({number})"
+            number += 1
+        used.add(candidate.casefold())
+        planned.append((title, candidate))
+
+    copied = 0
+    total = 0
+    written = 0
+    skipped = 0
+    errors: list[str] = []
+    for title, folder_name in planned:
+        if cancel.is_set():
+            return CopyResult(copied, total, written, skipped, errors, cancelled=True)
+        folder = dest_root / folder_name
+
+        def wrapped(progress: CopyProgress, copied=copied, total=total, written=written, skipped=skipped) -> None:
+            on_progress(
+                replace(
+                    progress,
+                    copied_bytes=copied + progress.copied_bytes,
+                    total_bytes=total + progress.total_bytes,
+                    files_written=written + progress.files_written,
+                    files_skipped=skipped + progress.files_skipped,
+                    error_count=len(errors) + progress.error_count,
+                )
+            )
+
+        result = copy_titles(
+            [(title, title)],
+            folder,
+            skip_same_size=skip_same_size,
+            cancel=cancel,
+            on_progress=wrapped,
+        )
+        copied += result.copied_bytes
+        total += result.total_bytes
+        written += result.files_written
+        skipped += result.files_skipped
+        errors.extend(result.errors)
+        if result.halted:
+            return CopyResult(copied, total, written, skipped, errors, halted=result.halted)
+        if result.cancelled:
+            return CopyResult(copied, total, written, skipped, errors, cancelled=True)
+        source_totals = tree_totals(title, cancel)
+        dest_totals = tree_totals(folder, cancel)
+        if source_totals is None or dest_totals is None:
+            return CopyResult(copied, total, written, skipped, errors, cancelled=True)
+        if source_totals != dest_totals:
+            errors.append(
+                f"{folder_name}: destination has {dest_totals[0]} files and {dest_totals[1]} bytes; "
+                f"source has {source_totals[0]} files and {source_totals[1]} bytes."
+            )
+    verified = not errors
+    return CopyResult(copied, total, written, skipped, errors, verified=verified)

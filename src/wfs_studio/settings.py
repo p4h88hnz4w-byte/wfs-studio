@@ -16,6 +16,11 @@ DEFAULTS = {
     "output": "",
     "dump_path": "/",
     "dump_usr_dir": False,
+    "gametdb_zip": "",
+    "cover_zip": "",
+    "game_data_copy": True,
+    "save_dest": "",
+    "save_usb": False,
 }
 
 

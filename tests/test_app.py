@@ -93,6 +93,49 @@ def test_size_worker_emits_byte_counts_past_2gib(tmp_path: Path, monkeypatch):
     assert seen[0][1] > 2**31
 
 
+def test_size_worker_reuses_a_cached_size(tmp_path: Path, monkeypatch):
+    calls: list[Path] = []
+
+    def fake(path, cancel=None):
+        calls.append(path)
+        return 10
+
+    monkeypatch.setattr("wfs_studio.app.directory_size", fake)
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "meta.xml").write_text("<menu></menu>", encoding="utf-8")
+    record = TitleRecord(
+        source_root=tmp_path,
+        path=tmp_path,
+        high_id="00050000",
+        low_id="10112200",
+        kind="Game",
+        name="Cached",
+        product_code="",
+        region="",
+        version="",
+        publisher="",
+    )
+    cache = tmp_path / "title-sizes.json"
+    app = QApplication.instance() or QApplication([])
+
+    def run_once(refresh: bool = False) -> list[object]:
+        seen: list[object] = []
+        worker = SizeWorker([record], threading.Event(), cache_path=cache, refresh=refresh)
+        worker.sized.connect(seen.append)
+        worker.start()
+        assert worker.wait(3000)
+        app.processEvents()
+        return seen
+
+    assert run_once() == [(str(tmp_path), 10)]
+    assert calls == [tmp_path]
+    calls.clear()
+    assert run_once() == [(str(tmp_path), 10)]
+    assert calls == []
+    assert run_once(refresh=True) == [(str(tmp_path), 10)]
+    assert calls == [tmp_path]
+
+
 def test_size_cell_stores_a_large_byte_count():
     app = QApplication.instance() or QApplication([])
     del app

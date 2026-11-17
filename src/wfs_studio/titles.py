@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -204,6 +205,52 @@ def iter_title_dirs(source: Path) -> list[Path]:
         else:
             found.append(child)
     return found
+
+
+def meta_stamp(path: Path) -> str:
+    """Return a stamp for ``meta/meta.xml``, or ``""`` when that file is absent.
+
+    The size cache uses this so a replaced title is measured again. Editing a
+    file inside ``content/`` does not change it. Recount sizes does that.
+    """
+    try:
+        info = (path / "meta" / "meta.xml").stat()
+    except OSError:
+        return ""
+    return f"{info.st_mtime_ns}:{info.st_size}"
+
+
+def load_size_cache(path: Path) -> dict[str, dict[str, int | str]]:
+    """Load ``{title path: {size, stamp}}``. A bad file is an empty cache."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict) or raw.get("version") != 1:
+        return {}
+    entries = raw.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    clean: dict[str, dict[str, int | str]] = {}
+    for key, value in entries.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        size = value.get("size")
+        stamp = value.get("stamp")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            continue
+        if not isinstance(stamp, str) or not stamp:
+            continue
+        clean[key] = {"size": size, "stamp": stamp}
+    return clean
+
+
+def save_size_cache(path: Path, entries: dict[str, dict[str, int | str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"version": 1, "entries": entries}
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    temporary.replace(path)
 
 
 def directory_size(path: Path, cancel=None) -> int | None:
