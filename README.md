@@ -1,6 +1,6 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.1. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.2. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
 
 `CHANGELOG.md` is the record of what has been built. `FUTURE.md` is what is still ahead. The short version:
 
@@ -8,7 +8,7 @@ WFS Studio is a desktop program for your own Wii U backups. Version 0.6.1. It is
 | --- | --- |
 | Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout. Run `wfs-extract` on your own MLC or USB image. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
-| Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. An Apple Silicon `.app`, then an x86_64 Linux AppImage. The plan is in `FUTURE.md`. |
+| Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. The plan is in `FUTURE.md`. |
 
 ## Run
 
@@ -96,7 +96,7 @@ python -m wfs_studio
 
 `third_party/wfs-tools` is a git submodule pinned to upstream tag `v1.2.3` (commit `f5c652e`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a normal clone. The nested `wfslib` and `vcpkg` submodules are not required to run the GUI.
 
-This virtualenv is how the program is developed on a Mac. It is not what other people should have to build. A frozen Mac app and a Linux AppImage are planned in `FUTURE.md`. Neither has been built yet.
+This virtualenv is how the program is developed on a Mac. It is not what other people should have to build. Finished downloads will be on the [Releases](https://github.com/p4h88hnz4w-byte/wfs-studio/releases) page: the source zip and tar.gz for the tag, an Apple Silicon `.dmg` and a zip of the `.app`, and an x86_64 Linux AppImage. `make help` lists the recipe. No binary has been built yet. The detail is in `FUTURE.md`.
 
 ## Tests
 
@@ -112,8 +112,11 @@ tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built
 FUTURE.md           What is still ahead
 third_party/wfs-tools/   Upstream source at v1.2.3
+packaging/licenses/ Qt and app license text copied into a frozen build
+Makefile            Builds dist/ and can upload a GitHub Release
 vendor/             Official binaries after download, on your machine
 cache/              GameTDB list, disc images, and settings, on your machine
+dist/               Built .app, .zip, and .dmg, on your machine
 ```
 
 ## License

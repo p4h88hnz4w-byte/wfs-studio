@@ -1,0 +1,12 @@
+Qt and PySide6
+
+The window toolkit in a frozen WFS Studio build is PySide6, which is Qt.
+PySide6 is available under LGPL-3.0-only, or GPL-2.0-only, or GPL-3.0-only.
+The text of LGPL-3.0 and GPL-3.0 is in this folder. GPL-2.0 is published at
+https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+
+Qt is shipped as shared libraries inside the bundle, next to the other
+libraries the build collected. To use your own build of those libraries,
+replace the matching files in place and sign the bundle again. The WFS Studio
+source stays MIT. That license is the file named LICENSE in this folder.
+koolkdev's wfs-tools license is wfs-tools-LICENSE.

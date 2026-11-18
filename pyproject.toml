@@ -1,6 +1,6 @@
 [project]
 name = "wfs-studio"
-version = "0.6.1"
+version = "0.6.2"
 description = "Desktop GUI for browsing Wii U title dumps and running wfs-extract."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -10,6 +10,7 @@ dependencies = ["PySide6>=6.6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+pack = ["pyinstaller>=6"]
 
 [project.scripts]
 wfs-studio = "wfs_studio.__main__:main"

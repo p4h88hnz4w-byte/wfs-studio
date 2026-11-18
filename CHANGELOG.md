@@ -2,6 +2,14 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.2
+
+Downloads will be attached to a [GitHub Release](https://github.com/p4h88hnz4w-byte/wfs-studio/releases). The git tree stays source.
+
+- GitHub attaches the source zip and tar.gz to the release tag. The built program is uploaded beside them.
+- Apple Silicon is a `.dmg` and a zip of `WFS Studio.app`. Linux is an x86_64 AppImage. `Makefile` builds the Mac files into `dist/`, and `make release` uploads them when they exist.
+- No binary has been built or uploaded.
+
 ## 0.6.1
 
 The window follows the Wii U menu: white surfaces, soft gray panels, and the logo blue `#009AC7`.

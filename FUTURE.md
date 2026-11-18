@@ -19,9 +19,11 @@ People who use this should not create a Python virtualenv. The `.venv` in this c
 
 Ship one frozen app per machine type. The first two are the ones that match the machines we can actually support with the official `wfs-extract` builds already checksummed in `binaries.py`.
 
+The download page is the GitHub Release for that version: [p4h88hnz4w-byte/wfs-studio/releases](https://github.com/p4h88hnz4w-byte/wfs-studio/releases). GitHub attaches the source zip and the source tar.gz to the tag. The built programs are uploaded next to those archives. `Makefile` is the recipe. `make zip` and `make dmg` write Apple Silicon files under `dist/`. `make release` uploads whatever `dist/WFS-Studio-<version>-*` files exist, and it leaves an existing release alone. `dist/` stays out of git.
+
 | Artifact | Built on | Who can run it |
 | --- | --- | --- |
-| macOS `.app`, arm64 | This Mac | Apple Silicon |
+| macOS `.dmg` and a zip of the `.app`, arm64 | This Mac, `make dmg` and `make zip` | Apple Silicon |
 | Linux AppImage, x86_64 | A container whose glibc is 2.28 | Most current desktop x86_64 distros. See below. |
 | macOS `.app`, x86_64 | An Intel Mac, later | Intel Macs. Official `wfs-extract` already has a `macos-x64` zip. This Mac's Homebrew Python is arm64 only, so it cannot produce that app. |
 | Windows | Later | Official `wfs-extract` already has a `windows-x64` zip. |
@@ -40,7 +42,7 @@ The aarch64 PySide6 wheels moved up to a much newer glibc. That does not change 
 
 ### What the frozen app has to change in the code
 
-`locations.data_dir` is the split. A source checkout still writes `cache/` and `vendor/` next to the project. A frozen build writes them under Application Support on macOS and `~/.local/share/wfs-studio` on Linux. `WFS_STUDIO_DATA` overrides either place. `WFS_STUDIO_HOME` still chooses the checkout root used in development. The next packaging step is to build the Apple Silicon `.app` with that data directory, and to put the matching `wfs-extract` beside the app.
+`locations.data_dir` is the split. A source checkout still writes `cache/` and `vendor/` next to the project. A frozen build writes them under Application Support on macOS and `~/.local/share/wfs-studio` on Linux. `WFS_STUDIO_DATA` overrides either place. `WFS_STUDIO_HOME` still chooses the checkout root used in development. `make app` builds the Apple Silicon `.app` into `dist/` with that data directory. The matching `wfs-extract` still downloads on first use until it is placed beside the app.
 
 Still to do when the app is frozen:
 - `wfs-extract` for that platform shipped beside the app, with koolkdev's MIT `LICENSE`, still checked by the SHA-256 in `binaries.py`. The download can stay as a fallback when the bundled binary is absent.
@@ -53,7 +55,7 @@ Still to do when the app is frozen:
 - `HANDOFF.md`, `cache/`, or `.venv`.
 - `wfs-file-injector` and `wfs-reencryptor` as features. The official zip contains them. The app still does not run them.
 
-No `.app` and no AppImage have been produced. The data-directory split is in place, and the Apple Silicon `.app` is the next build.
+No `.app` and no AppImage have been produced, and no GitHub Release has been published. The data-directory split and the Makefile are in place. The next build is `make app` on this Mac.
 
 ## Still out of scope
 
