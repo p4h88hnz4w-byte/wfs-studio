@@ -1,12 +1,12 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.6. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.7. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
 | | |
 | --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout. Run `wfs-extract` on your own MLC or USB image. Write a crash traceback to `cache/wfs-studio.log`. |
+| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Write a crash traceback to `cache/wfs-studio.log`. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
 | Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. |
 
@@ -35,7 +35,7 @@ The copy shows a progress bar and the path currently being written. Stopping del
 
 Backs up saves onto this computer in the layout used by [SaveMii](https://github.com/w3irDv/savemii). It does not edit save files, and it does not write into the dump.
 
-1. The source is the folder chosen on the Titles tab. That can be the dump, `usr/save`, or one high id such as `usr/save/00050000`.
+1. The source is the folder chosen on the Titles tab. That can be the dump, `usr`, `usr/save`, or one high id such as `usr/save/00050000`.
 2. Scan saves. `usr/save/system` is skipped.
 3. Check the saves, or press Select all. Choosing every save asks where to write an archive: a zip on a Mac, and 7z or a bzip2 tar on Linux.
 4. Choose a backup folder and start the backup. The archive is written after the SaveMii folders.
@@ -103,10 +103,13 @@ git clone --recurse-submodules https://github.com/p4h88hnz4w-byte/wfs-studio.git
 cd wfs-studio
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -r requirements-dev.txt
+pip install -e .
 python -m wfs_studio.binaries
 python -m wfs_studio
 ```
+
+`requirements.txt` is the package the window needs: PySide6. `requirements-dev.txt` adds pytest and PyInstaller. The same lists are the `project.dependencies` and optional extras in `pyproject.toml`.
 
 `third_party/wfs-tools` is a git submodule pinned to upstream tag `v1.2.3` (commit `f5c652e`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a normal clone. The nested `wfslib` and `vcpkg` submodules are not required to run the GUI.
 
@@ -124,6 +127,8 @@ pytest
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built
+requirements.txt    Packages needed to run the window
+requirements-dev.txt  Test and pack extras
 third_party/wfs-tools/   Upstream source at v1.2.3
 packaging/licenses/ Qt and app license text copied into a frozen build
 Makefile            Builds dist/ and can upload a GitHub Release

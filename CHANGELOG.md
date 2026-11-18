@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.7
+
+The install list and the README match the current window.
+
+- `requirements.txt` is PySide6. `requirements-dev.txt` adds pytest and PyInstaller. `pyproject.toml` carries the same versions.
+- The README records the corner version, save scan of an `usr` folder, and Select all with a zip, 7z, or bzip2 archive.
+
 ## 0.6.6
 
 Select all on the Saves tab can write an archive.
