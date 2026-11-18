@@ -2,6 +2,14 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.0
+
+A Linux installer asks where to put the program, what to call it, and which shell to update.
+
+- `install-linux.sh` is for Linux. It creates a virtualenv in the working directory you choose and installs the window there.
+- It asks for an alias, then asks for bash or zsh. The detected shell is the default. Bash is written to `~/.bashrc`. Zsh is written to `~/.zshrc`.
+- Running the script again replaces that alias. It does not remove the rest of the shell file.
+
 ## 0.6.10
 
 Edit → Select all follows the tab in front.

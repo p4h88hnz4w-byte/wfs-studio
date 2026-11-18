@@ -1,12 +1,12 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.10. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.7.0. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
 | | |
 | --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Edit → Select all checks every title or save, or selects the extract log. Ctrl+C in the terminal closes the window. Write a crash traceback to `cache/wfs-studio.log`. |
+| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Edit → Select all checks every title or save, or selects the extract log. Ctrl+C in the terminal closes the window. Linux can install from `install-linux.sh`, which asks for a working directory, an alias, and bash or zsh. Write a crash traceback to `cache/wfs-studio.log`. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
 | Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. |
 
@@ -99,6 +99,18 @@ Reading a raw USB device may require an administrator shell. The window shows th
 
 ## Setup
 
+Linux can use the installer. It asks for a working directory, an alias, and bash or zsh. The shell you choose is the file it updates: `~/.bashrc` or `~/.zshrc`. The alias starts in that working directory.
+
+```bash
+git clone --recurse-submodules https://github.com/p4h88hnz4w-byte/wfs-studio.git
+cd wfs-studio
+bash install-linux.sh
+```
+
+Python 3.10 or newer has to be on `PATH` as `python3`. On Debian or Ubuntu that is often `sudo apt install python3 python3-venv python3-pip git`. The script does not use root. Run it again to change the directory, the alias, or the shell file. The rest of that shell file stays.
+
+A checkout on a Mac, or a Linux machine where you want the developer tools, can still be built by hand:
+
 ```bash
 git clone --recurse-submodules https://github.com/p4h88hnz4w-byte/wfs-studio.git
 cd wfs-studio
@@ -125,6 +137,7 @@ pytest
 ## Layout
 
 ```
+install-linux.sh    Linux installer: working directory, alias, bash or zsh
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built
