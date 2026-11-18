@@ -2,6 +2,14 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.6
+
+Select all on the Saves tab can write an archive.
+
+- Select all checks every save. When every save is selected, the window asks where to put an archive.
+- A Mac archive is a zip from `ditto`, the same kind Archive Utility writes. Linux uses `7z` when it is installed, and a `.tar.bz2` otherwise.
+- The archive is written after the SaveMii folders, and it sits outside the backup folder.
+
 ## 0.6.5
 
 The version sits in the top-right corner of the window.

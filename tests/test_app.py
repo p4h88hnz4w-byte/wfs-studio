@@ -387,3 +387,29 @@ def test_version_sits_in_the_top_right(tmp_path: Path):
     assert label.y() < 40
     assert label.x() > window.width() / 2
     window.close()
+
+
+def test_select_all_saves_offers_an_archive(tmp_path: Path, monkeypatch):
+    profile = tmp_path / "dump" / "usr" / "save" / "00050000" / "10112200" / "user" / "80000001"
+    profile.mkdir(parents=True)
+    (profile / "save.dat").write_bytes(b"abc")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan_saves()
+    assert len(window.save_records) == 1
+    monkeypatch.setattr(
+        "wfs_studio.app.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    target = tmp_path / "packed.zip"
+    monkeypatch.setattr(
+        "wfs_studio.app.QFileDialog.getSaveFileName",
+        lambda *_args, **_kwargs: (str(target), ""),
+    )
+    window._select_all_saves()
+    assert len(window._checked_saves()) == 1
+    assert window._save_archive == target
+    window.close()

@@ -73,7 +73,17 @@ from wfs_studio.gametdb import (
 from wfs_studio.icon import title_icon_png
 from wfs_studio.locations import data_dir
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
-from wfs_studio.saves import SaveRecord, backup_saves, scan_saves
+from wfs_studio.saves import (
+    SaveRecord,
+    archive_dialog_filter,
+    archive_format,
+    archive_suffix,
+    backup_saves,
+    savemii_dir_name,
+    scan_saves,
+    with_archive_suffix,
+    write_save_archive,
+)
 from wfs_studio.settings import load_settings, save_settings
 from wfs_studio.titles import (
     TitleRecord,
@@ -220,12 +230,21 @@ class SaveBackupWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, records: list[SaveRecord], dest: Path, storage: str, cancel: threading.Event):
+    def __init__(
+        self,
+        records: list[SaveRecord],
+        dest: Path,
+        storage: str,
+        cancel: threading.Event,
+        archive: Path | None = None,
+    ):
         super().__init__()
         self.records = records
         self.dest = dest
         self.storage = storage
         self.cancel = cancel
+        self.archive = archive
+        self.archive_note = ""
 
     def run(self) -> None:
         try:
@@ -236,6 +255,23 @@ class SaveBackupWorker(QThread):
                 cancel=self.cancel,
                 on_progress=self.progress.emit,
             )
+            if (
+                self.archive is not None
+                and result.verified
+                and not result.cancelled
+                and not result.errors
+                and not result.halted
+            ):
+                names = [
+                    savemii_dir_name(record.display_name, record.high_id, record.low_id)
+                    for record in self.records
+                ]
+                try:
+                    written = write_save_archive(self.dest, names, self.archive)
+                    self.archive_note = f"Archive written to {written}"
+                except (OSError, PathIssue) as exc:
+                    log_failure("Save archive failed")
+                    self.archive_note = f"Archive failed: {exc}"
             self.succeeded.emit(result)
         except Exception as exc:
             log_failure("Save backup failed")
@@ -335,6 +371,8 @@ class MainWindow(QMainWindow):
         self._last_copy_was_game_data = False
         self._cancel_saves = threading.Event()
         self.save_records: list[SaveRecord] = []
+        self._save_archive: Path | None = None
+        self._save_archive_declined = False
         self._workers: list[QThread] = []
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
@@ -523,6 +561,7 @@ class MainWindow(QMainWindow):
         self.save_table.verticalHeader().setVisible(False)
         self.save_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.save_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.save_table.itemChanged.connect(self._on_save_check_changed)
         header = self.save_table.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -544,6 +583,8 @@ class MainWindow(QMainWindow):
         action_row = QHBoxLayout()
         self.save_scan_button = QPushButton("Scan saves")
         self.save_scan_button.clicked.connect(self._scan_saves)
+        self.save_all_button = QPushButton("Select all")
+        self.save_all_button.clicked.connect(self._select_all_saves)
         self.save_backup_button = QPushButton("Back up checked")
         self.save_backup_button.setObjectName("primary")
         self.save_backup_button.clicked.connect(self._start_save_backup)
@@ -551,6 +592,7 @@ class MainWindow(QMainWindow):
         self.save_stop_button.setEnabled(False)
         self.save_stop_button.clicked.connect(lambda: self._cancel_saves.set())
         action_row.addWidget(self.save_scan_button)
+        action_row.addWidget(self.save_all_button)
         action_row.addWidget(self.save_backup_button)
         action_row.addWidget(self.save_stop_button)
         action_row.addStretch(1)
@@ -583,6 +625,8 @@ class MainWindow(QMainWindow):
             self._warn("Choose a source folder on the Titles tab first.")
             return
         self._persist()
+        self._save_archive = None
+        self._save_archive_declined = False
         self.save_records = scan_saves(Path(source), self.database)
         self.save_table.setRowCount(len(self.save_records))
         for row, record in enumerate(self.save_records):
@@ -602,6 +646,63 @@ class MainWindow(QMainWindow):
         message = f"{count} saves" if count else f"No saves in {source}"
         self.save_label.setText(message)
         self.statusBar().showMessage(message)
+
+    def _set_save_checks(self, checked: bool) -> None:
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self.save_table.blockSignals(True)
+        try:
+            for row in range(self.save_table.rowCount()):
+                item = self.save_table.item(row, 0)
+                if item is not None:
+                    item.setCheckState(state)
+        finally:
+            self.save_table.blockSignals(False)
+
+    def _all_saves_checked(self) -> bool:
+        return bool(self.save_records) and len(self._checked_saves()) == len(self.save_records)
+
+    def _select_all_saves(self) -> None:
+        if not self.save_records:
+            self._warn("Scan saves first.")
+            return
+        self._save_archive = None
+        self._save_archive_declined = False
+        self._set_save_checks(True)
+        self._offer_save_archive()
+
+    def _on_save_check_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() != 0 or item.checkState() != Qt.CheckState.Checked:
+            return
+        if self._all_saves_checked():
+            self._offer_save_archive()
+
+    def _offer_save_archive(self) -> None:
+        if self._save_archive is not None or self._save_archive_declined:
+            return
+        count = len(self.save_records)
+        answer = QMessageBox.question(
+            self,
+            "Archive saves",
+            f"All {count} saves are selected. Write them into an archive?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._save_archive_declined = True
+            return
+        fmt = archive_format()
+        suggested = Path.home() / f"WFS Studio saves{archive_suffix(fmt)}"
+        dest_text = self.save_dest_edit.text().strip()
+        if dest_text:
+            suggested = Path(dest_text).expanduser().parent / suggested.name
+        chosen, _selected = QFileDialog.getSaveFileName(
+            self,
+            "Save archive",
+            str(suggested),
+            archive_dialog_filter(fmt),
+        )
+        if not chosen:
+            self._save_archive_declined = True
+            return
+        self._save_archive = with_archive_suffix(Path(chosen), fmt)
 
     def _checked_saves(self) -> list[SaveRecord]:
         chosen: list[SaveRecord] = []
@@ -625,12 +726,17 @@ class MainWindow(QMainWindow):
             return
         self._persist()
         storage = "USB" if self.save_usb_box.isChecked() else "NAND"
-        answer = QMessageBox.question(
-            self,
-            "Back up saves",
+        archive = self._save_archive if len(chosen) == len(self.save_records) else None
+        if archive is None and self._all_saves_checked() and not self._save_archive_declined:
+            self._offer_save_archive()
+            archive = self._save_archive
+        message = (
             f"Back up {len(chosen)} saves into {dest_text}?\n\n"
-            "Files are copied only. The dump is not changed.",
+            "Files are copied only. The dump is not changed."
         )
+        if archive is not None:
+            message += f"\n\nAn archive will also be written to {archive}."
+        answer = QMessageBox.question(self, "Back up saves", message)
         if answer != QMessageBox.StandardButton.Yes:
             return
         self._busy = True
@@ -640,7 +746,7 @@ class MainWindow(QMainWindow):
         self.save_progress.setValue(0)
         self.save_log.clear()
         self.save_label.setText("Starting")
-        worker = SaveBackupWorker(chosen, Path(dest_text), storage, self._cancel_saves)
+        worker = SaveBackupWorker(chosen, Path(dest_text), storage, self._cancel_saves, archive)
         worker.progress.connect(self._save_progress)
         worker.succeeded.connect(self._save_finished)
         worker.failed.connect(self._save_failed)
@@ -666,6 +772,9 @@ class MainWindow(QMainWindow):
                 f"Finished. Wrote {result.files_written}, skipped {result.files_skipped}."
             )
             self.save_log.appendPlainText("SaveMii folders match the source file count and byte total.")
+            note = getattr(self.sender(), "archive_note", "")
+            if note:
+                self.save_log.appendPlainText(note)
         else:
             self.save_label.setText(result.halted or "Backup finished with errors.")
             for error in result.errors:

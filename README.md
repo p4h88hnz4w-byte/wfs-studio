@@ -1,6 +1,6 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.5. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.6. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
@@ -37,7 +37,8 @@ Backs up saves onto this computer in the layout used by [SaveMii](https://github
 
 1. The source is the folder chosen on the Titles tab. That can be the dump, `usr/save`, or one high id such as `usr/save/00050000`.
 2. Scan saves. `usr/save/system` is skipped.
-3. Check the saves, choose a backup folder, and start the backup.
+3. Check the saves, or press Select all. Choosing every save asks where to write an archive: a zip on a Mac, and 7z or a bzip2 tar on Linux.
+4. Choose a backup folder and start the backup. The archive is written after the SaveMii folders.
 
 Each save is written to `Title Name [00050000-lowid]/0/` with the profile folders, `common` when the game has it, `savemii_saveinfo.xml`, and `savemiiMeta.json`. The next backup of that title uses slot `1`, then the next free slot through `255`. Check the USB box when the dump came from a USB drive so the metadata says `USB` instead of `NAND`.
 

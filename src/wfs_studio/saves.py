@@ -7,8 +7,10 @@ restore. It does not edit save contents, and it does not write into the dump.
 from __future__ import annotations
 
 import json
+import platform
 import re
 import shutil
+import subprocess
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -197,6 +199,112 @@ def scan_saves(source: Path, database: GameTdb | None = None) -> list[SaveRecord
             records.extend(_scan_high(high, high.name, database, root))
     records.sort(key=lambda item: (item.display_name.lower(), item.title_id))
     return records
+
+
+def archive_format(system: str | None = None) -> str:
+    """Archive kind for this computer.
+
+    A Mac uses a zip, which is what Archive Utility writes. Linux uses 7z when
+    ``7z`` or ``7zz`` is installed, and a bzip2 tar otherwise.
+    """
+    name = (system if system is not None else platform.system()).lower()
+    if name == "darwin":
+        return "zip"
+    if shutil.which("7z") or shutil.which("7zz"):
+        return "7z"
+    return "bzip2"
+
+
+def archive_suffix(fmt: str) -> str:
+    return {"zip": ".zip", "7z": ".7z", "bzip2": ".tar.bz2"}[fmt]
+
+
+def archive_dialog_filter(fmt: str) -> str:
+    if fmt == "zip":
+        return "Zip archive (*.zip)"
+    if fmt == "7z":
+        return "7z archive (*.7z)"
+    return "bzip2 archive (*.tar.bz2)"
+
+
+def with_archive_suffix(path: Path, fmt: str) -> Path:
+    suffix = archive_suffix(fmt)
+    if fmt == "bzip2":
+        if path.name.endswith(".tar.bz2"):
+            return path
+        return path.with_name(path.name + ".tar.bz2")
+    if path.suffix.lower() == suffix:
+        return path
+    return path.with_name(path.name + suffix)
+
+
+def write_save_archive(
+    dest_root: Path,
+    folder_names: list[str],
+    archive: Path,
+    *,
+    fmt: str | None = None,
+) -> Path:
+    """Write the named backup folders into one archive next to, not inside, ``dest_root``."""
+    if not folder_names:
+        raise PathIssue("No save folders to archive.")
+    root = dest_root.expanduser().resolve()
+    if not root.is_dir():
+        raise PathIssue("The backup folder does not exist.")
+    names: list[str] = []
+    for name in folder_names:
+        if not name or name in {".", ".."} or "/" in name or "\\" in name:
+            raise PathIssue(f"Unsafe folder name: {name}")
+        if not (root / name).is_dir():
+            raise PathIssue(f"Missing backup folder: {name}")
+        names.append(name)
+    kind = fmt or archive_format()
+    if kind not in {"zip", "7z", "bzip2"}:
+        raise PathIssue(f"Unknown archive type: {kind}")
+    target = with_archive_suffix(archive.expanduser(), kind)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    resolved = target.resolve() if target.exists() else _resolve_new_file(target)
+    if resolved == root or _is_inside(resolved, root):
+        raise PathIssue("The archive must sit outside the backup folder.")
+    if resolved.exists() and resolved.is_dir():
+        raise PathIssue("The archive path is a folder.")
+    if resolved.exists():
+        resolved.unlink()
+    if kind == "zip":
+        _run_archive(["ditto", "-c", "-k", "--keepParent", *names, str(resolved)], root)
+    elif kind == "7z":
+        binary = shutil.which("7z") or shutil.which("7zz")
+        if binary is None:
+            raise PathIssue("7z is not installed.")
+        _run_archive([binary, "a", "-t7z", "-bd", "-y", str(resolved), *names], root)
+    else:
+        _run_archive(["tar", "-cjf", str(resolved), *names], root)
+    return resolved
+
+
+def _resolve_new_file(path: Path) -> Path:
+    parent = path.parent
+    if parent.exists():
+        return parent.resolve() / path.name
+    raise PathIssue(f"Cannot resolve {path}.")
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _run_archive(command: list[str], cwd: Path) -> None:
+    try:
+        subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise PathIssue(f"Could not run {command[0]}.") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        raise PathIssue(detail or f"{command[0]} exited with status {exc.returncode}.") from exc
 
 
 def _metadata(record: SaveRecord, storage: str, when: datetime) -> dict[str, str]:

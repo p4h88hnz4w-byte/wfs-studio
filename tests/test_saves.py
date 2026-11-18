@@ -2,7 +2,20 @@ import json
 import threading
 from pathlib import Path
 
-from wfs_studio.saves import backup_saves, fat32_title, savemii_dir_name, scan_saves
+import tarfile
+import zipfile
+
+import pytest
+
+from wfs_studio.paths import PathIssue
+from wfs_studio.saves import (
+    archive_format,
+    backup_saves,
+    fat32_title,
+    savemii_dir_name,
+    scan_saves,
+    write_save_archive,
+)
 
 
 def write_save(root: Path, high: str, low: str, profiles: dict[str, bytes], common: bytes | None = None) -> Path:
@@ -59,6 +72,38 @@ def test_scan_lists_profiles_and_skips_system(tmp_path: Path):
     assert records[0].name == "Pokken: Deluxe"
     assert records[0].profiles == ("80000013",)
     assert records[0].has_common is True
+
+
+def _backup_folder(root: Path) -> tuple[Path, str]:
+    name = "Game [00050000-10112200]"
+    slot = root / name / "0"
+    slot.mkdir(parents=True)
+    (slot / "save.dat").write_bytes(b"abc")
+    return root, name
+
+
+def test_archive_format_is_zip_on_mac_and_7z_or_bzip_on_linux(monkeypatch):
+    assert archive_format("Darwin") == "zip"
+    monkeypatch.setattr("wfs_studio.saves.shutil.which", lambda name: "/usr/bin/7z" if name == "7z" else None)
+    assert archive_format("Linux") == "7z"
+    monkeypatch.setattr("wfs_studio.saves.shutil.which", lambda _name: None)
+    assert archive_format("Linux") == "bzip2"
+
+
+def test_zip_and_bzip_archives_contain_the_backup(tmp_path: Path):
+    root, name = _backup_folder(tmp_path / "backups")
+    zip_path = write_save_archive(root, [name], tmp_path / "out.zip", fmt="zip")
+    with zipfile.ZipFile(zip_path) as bundle:
+        assert any(item.endswith("save.dat") for item in bundle.namelist())
+    bz_path = write_save_archive(root, [name], tmp_path / "out.tar.bz2", fmt="bzip2")
+    with tarfile.open(bz_path, "r:bz2") as bundle:
+        assert any(item.endswith("save.dat") for item in bundle.getnames())
+
+
+def test_archive_must_sit_outside_the_backup_folder(tmp_path: Path):
+    root, name = _backup_folder(tmp_path / "backups")
+    with pytest.raises(PathIssue):
+        write_save_archive(root, [name], root / "inside.zip", fmt="zip")
 
 
 def test_savemii_folder_name_replaces_forbidden_characters():
