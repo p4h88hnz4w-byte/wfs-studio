@@ -20,6 +20,7 @@ from wfs_studio.extract import (
 from wfs_studio.gametdb import (
     annotate,
     cover_paths,
+    disc_urls,
     fetch_cover,
     fetch_png,
     index_cover_zip,
@@ -36,9 +37,11 @@ from wfs_studio.paths import PathIssue, validate_copy, validate_extract_paths
 from wfs_studio.settings import load_settings, save_settings
 from wfs_studio.titles import (
     directory_size,
+    format_region,
     load_meta_text,
     load_size_cache,
     meta_stamp,
+    region_label,
     save_size_cache,
     scan_titles,
 )
@@ -89,6 +92,45 @@ def test_scan_reads_names_regions_and_related_updates(tmp_path: Path):
     assert by_kind["Game"].product_code == "WUP-P-APKE"
     assert by_kind["Game"].publisher == "Nintendo"
     assert by_kind["Update"].name == "Update for POKKÉN TOURNAMENT Deluxe"
+
+
+def test_pal_and_ntsc_j_titles_scan_and_match_gametdb(tmp_path: Path):
+    pal = META.replace("WUP-P-APKE", "WUP-P-APKP").replace("00000002", "00000004")
+    japan = META.replace("WUP-P-APKE", "WUP-P-APKJ").replace("00000002", "00000001")
+    letter_only = META.replace("WUP-P-APKE", "WUP-P-APKX").replace(
+        '<region type="hexBinary" length="4">00000002</region>',
+        "<region></region>",
+    )
+    write_title(tmp_path, "00050000", "101df401", pal)
+    write_title(tmp_path, "00050000", "101df402", japan)
+    write_title(tmp_path, "00050000", "101df403", letter_only)
+    by_low = {record.low_id: record for record in scan_titles(tmp_path)}
+    assert by_low["101df401"].region == "EUR"
+    assert by_low["101df402"].region == "JPN"
+    assert by_low["101df403"].region == "EUR"
+    assert format_region("00000001") == "JPN"
+    assert format_region("00000002") == "USA"
+    assert format_region("00000004") == "EUR"
+    assert format_region("00000006") == "USA+EUR"
+    assert format_region("00000007") == "JPN+USA+EUR"
+    assert format_region("00000008") == "AUS"
+    assert region_label("USA") == "USA (NTSC-U)"
+    assert region_label("EUR") == "EUR (PAL)"
+    assert region_label("JPN") == "JPN (NTSC-J)"
+    assert region_label("AUS") == "AUS (PAL)"
+    assert region_label("USA+EUR") == "USA+EUR (NTSC-U, PAL)"
+    assert region_label("JPN+USA+EUR") == "JPN+USA+EUR (NTSC-J, NTSC-U, PAL)"
+    assert region_label("ALL") == "ALL"
+
+    database = parse_titles(GAMETDB + "APKJ01 = Pokken Tournament\n")
+    assert lookup(database, "WUP-P-APKP", "EUR") == ("APKP01", "Pokken Tournament")
+    assert lookup(database, "WUP-P-APKJ", "JPN") == ("APKJ01", "Pokken Tournament")
+    assert lookup(database, "WUP-P-APKE", "USA+EUR") == ("APKE01", "Pokken Tournament")
+    assert disc_urls("APKP01", "EUR")[0].endswith("/EN/APKP01.png")
+    assert disc_urls("APKJ01", "JPN")[0].endswith("/JA/APKJ01.png")
+    assert disc_urls("APKE01", "USA")[0].endswith("/US/APKE01.png")
+    assert [url.rsplit("/", 2)[-2] for url in disc_urls("NAZE01", "USA+EUR")] == ["US", "EN", "JA"]
+    assert [url.rsplit("/", 2)[-2] for url in disc_urls("AMKP01", "EUR+AUS")] == ["EN", "AU", "US", "JA"]
 
 
 def test_utf16_meta_xml(tmp_path: Path):

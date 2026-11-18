@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from wfs_studio.locations import data_dir
+from wfs_studio.locations import data_dir, license_dir
+
+
+def test_license_files_live_beside_the_source(tmp_path: Path):
+    assert license_dir(tmp_path, frozen=False) == (tmp_path / "packaging" / "licenses").resolve()
 
 
 def test_a_checkout_keeps_data_beside_the_project(tmp_path: Path, monkeypatch):

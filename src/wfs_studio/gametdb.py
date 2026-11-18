@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from wfs_studio.titles import TitleRecord
+from wfs_studio.titles import REGION_LETTERS, TitleRecord
 
 TITLES_URL = "https://www.gametdb.com/wiiutdb.txt?LANG=EN"
 ZIP_URL = "https://www.gametdb.com/wiiutdb.zip?LANG=EN"
@@ -99,18 +99,14 @@ def lookup(db: GameTdb, product_code: str, region: str = "") -> tuple[str, str] 
     matches = [ident for ident in db.by_id if ident.startswith(game)]
     if not matches:
         return None
+    # A combined region such as USA+EUR keeps the first letter it names.
     letter = ""
-    for name, candidate in (
-        ("USA", "E"),
-        ("JPN", "J"),
-        ("EUR", "P"),
-        ("KOR", "K"),
-        ("CHN", "C"),
-        ("TWN", "W"),
-        ("AUS", "A"),
-    ):
-        if region == name:
-            letter = candidate
+    for part in region.split("+"):
+        for name, candidate in REGION_LETTERS:
+            if part == name:
+                letter = candidate
+                break
+        if letter:
             break
 
     def rank(ident: str) -> tuple[int, int, int, str]:
@@ -140,9 +136,10 @@ def disc_urls(gametdb_id: str, region: str) -> list[str]:
     if not gametdb_id:
         return []
     folders: list[str] = []
-    primary = DISC_FOLDERS.get(region.split("+", 1)[0])
-    if primary:
-        folders.append(primary)
+    for part in region.split("+"):
+        folder = DISC_FOLDERS.get(part.strip())
+        if folder and folder not in folders:
+            folders.append(folder)
     for extra in ("US", "EN", "JA"):
         if extra not in folders:
             folders.append(extra)

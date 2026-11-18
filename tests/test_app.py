@@ -57,6 +57,7 @@ def test_window_lists_a_scanned_title(tmp_path: Path, monkeypatch):
 
     assert window.table.rowCount() == 1
     assert window.table.item(0, 2).text() == "Bayonetta"
+    assert window.table.item(0, 5).text() == "USA (NTSC-U)"
     assert window.table.item(0, 7).text() == "Bayonetta"
     assert parse_titles((tmp_path / "cache" / "wiiutdb.txt").read_text()).by_id["AAFE01"] == "Bayonetta"
     window.table.setCurrentCell(0, 2)
@@ -65,6 +66,7 @@ def test_window_lists_a_scanned_title(tmp_path: Path, monkeypatch):
         worker.wait(5000)
     app.processEvents()
     assert "Bayonetta" in window.detail_label.text()
+    assert "USA (NTSC-U)" in window.detail_label.text()
     assert "00050000-10112200" in window.detail_label.text()
     assert (tmp_path / "cache" / "covers" / "AAFE01.missing").is_file()
     window.close()

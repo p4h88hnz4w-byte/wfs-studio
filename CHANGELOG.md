@@ -2,6 +2,15 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.8
+
+The region column names the video standard. PAL and NTSC-J titles use the same copy and save path as an NTSC-U title.
+
+- USA is NTSC-U, EUR is PAL, and JPN is NTSC-J. Australia is PAL as well. Korea and Taiwan are NTSC.
+- A title flagged for more than one region, such as USA+EUR, keeps every flag. Disc art asks for each of those regions.
+- When `meta.xml` has no region, the fourth letter of the product id is used. `P` and the European language letters are PAL. `J` is NTSC-J. `E` and `Y` are NTSC-U.
+- About names GameTDB, SaveMii, koolkdev’s wfs-tools and wfslib, and Qt, and it shows where the license files are. The README links those projects.
+
 ## 0.6.7
 
 The install list and the README match the current window.

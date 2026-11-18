@@ -1,6 +1,6 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.7. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.8. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
@@ -23,7 +23,7 @@ The first time, create the virtualenv as in Setup below.
 ## Titles tab
 
 1. Choose the extracted dump, a `usr/title` folder, or one title folder.
-2. Scan. Names come from `longname_*` in `meta/meta.xml`. Each row shows that title's `meta/iconTex.tga` beside the name. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
+2. Scan. Names come from `longname_*` in `meta/meta.xml`. Each row shows that title's `meta/iconTex.tga` beside the name. The Region column reads the title's region bits: USA is NTSC-U, EUR is PAL (Europe, and Australian consoles, which use the EUR region), and JPN is NTSC-J. USA+EUR means the title is allowed on both. The folder layout is the same for each, and the title id keeps those copies apart. In a code such as `WUP-P-APKE`, the `P` is the package type. The region letter is the `E` in `APKE`. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
 3. Download GameTDB, or choose a `wiiutdb.zip` you already have. The zip stays compressed in `cache/wiiutdb.zip`. The app reads `wiiutdb.xml` from inside it. A plain `cache/wiiutdb.txt` is used only when no zip is available. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`. Banner zip reads `<id>.png` from a cover archive you already have. Without one, disc pictures are saved under `cache/covers/` after a download. If there is no banner and no disc, the pane shows `meta/iconTex.tga` from that title. A disc that arrives later replaces the icon.
 4. Check the titles, choose a destination, and press Transfer.
 
@@ -143,7 +143,9 @@ WFS Studio’s own source is MIT. See `LICENSE`.
 
 Other material stays under its own terms and is not relicensed by this MIT grant:
 
-- `third_party/wfs-tools` is MIT, copyright koolkdev. That `LICENSE` file stays with the source.
+- `third_party/wfs-tools` is MIT, copyright koolkdev. That `LICENSE` file stays with the source. The tools are built on koolkdev’s [wfslib](https://github.com/koolkdev/wfslib). This repository does not vendor that library. The app runs the official release zip.
 - The official wfs-tools release zips are downloaded when you run the app and kept in `vendor/` on your machine.
-- The GameTDB title list and artwork are downloaded when you click Download GameTDB and kept in `cache/` on your machine. They are GameTDB’s database. GameTDB does not host game dumps.
+- The [GameTDB](https://www.gametdb.com/) title list and artwork are downloaded when you click Download GameTDB and kept in `cache/` on your machine. They remain GameTDB’s database. GameTDB does not host game dumps.
+- Save backups follow the folder layout of [SaveMii](https://github.com/w3irDv/savemii). SaveMii’s source is not part of this program.
+- PySide6 is the window toolkit. It is Qt, available under the LGPL. A source checkout installs it with pip. A frozen build keeps those Qt libraries replaceable and copies `packaging/licenses/` into the app. WFS Studio’s own source stays MIT.
 - NAND images, extracted titles, `otp.bin`, and `seeprom.bin` stay on the console owner’s computer. The app only receives the paths you choose.

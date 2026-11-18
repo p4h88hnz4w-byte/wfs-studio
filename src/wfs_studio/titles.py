@@ -33,11 +33,44 @@ REGION_BITS = (
     (0x40, "TWN"),
 )
 
-_NAME_LANGS = ("en", "ja", "fr", "de", "es", "it", "nl", "pt", "ru", "ko", "zhtw", "zhcn")
+# GameTDB's fourth letter when a region name has to choose among ids.
+# Product letter A means every region, so it is not Australia here.
+REGION_LETTERS = (
+    ("USA", "E"),
+    ("JPN", "J"),
+    ("EUR", "P"),
+    ("KOR", "K"),
+    ("CHN", "C"),
+    ("TWN", "W"),
+    ("AUS", "A"),
+)
+
+# Video standard for the consoles that share a region bit. Australia's
+# retail consoles are the EUR region, which is PAL. China has no separate mark.
+_VIDEO = {
+    "JPN": "NTSC-J",
+    "USA": "NTSC-U",
+    "EUR": "PAL",
+    "AUS": "PAL",
+    "KOR": "NTSC",
+    "TWN": "NTSC",
+}
+
+_NAME_LANGS = ("en", "ja", "fr", "de", "es", "it", "nl", "pt", "ru", "ko", "zhs", "zht", "zhtw", "zhcn")
+# Fourth letter of the four-character id, used only when meta.xml has no region.
+# A is every region. D, F, I, R, S, and X are European language or PAL SKUs.
+# Y is another USA mark. Z is used for more than one combination, so it is left unset.
 _PRODUCT_REGION = {
     "E": "USA",
+    "Y": "USA",
     "J": "JPN",
     "P": "EUR",
+    "D": "EUR",
+    "F": "EUR",
+    "I": "EUR",
+    "R": "EUR",
+    "S": "EUR",
+    "X": "EUR",
     "K": "KOR",
     "C": "CHN",
     "W": "TWN",
@@ -143,6 +176,27 @@ def format_region(value: str) -> str:
     if number == 0:
         return ""
     return f"0x{number:08X}"
+
+
+def video_standard(region: str) -> str:
+    """NTSC-U, PAL, or NTSC-J for a region name from ``format_region``."""
+    labels: list[str] = []
+    for part in region.split("+"):
+        label = _VIDEO.get(part)
+        if label and label not in labels:
+            labels.append(label)
+    return ", ".join(labels)
+
+
+def region_label(region: str) -> str:
+    """Region name plus its video standard, for the title list."""
+    region = region.strip()
+    if not region:
+        return ""
+    video = video_standard(region)
+    if not video:
+        return region
+    return f"{region} ({video})"
 
 
 def _region_from_product(product_code: str) -> str:

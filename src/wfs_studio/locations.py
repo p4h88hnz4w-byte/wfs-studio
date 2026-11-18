@@ -15,6 +15,27 @@ from pathlib import Path
 from wfs_studio.binaries import repo_root
 
 
+def license_dir(install: Path | None = None, *, frozen: bool | None = None) -> Path:
+    """Directory of the license files that ship with this program.
+
+    A checkout keeps them in ``packaging/licenses``. A frozen macOS app
+    copies that folder to ``Contents/Resources/licenses``.
+    """
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if frozen:
+        executable = Path(sys.executable).resolve()
+        bundled = executable.parent.parent / "Resources" / "licenses"
+        beside = executable.parent / "licenses"
+        if bundled.is_dir():
+            return bundled
+        if beside.is_dir():
+            return beside
+        return bundled
+    root = (install or repo_root()).resolve()
+    return root / "packaging" / "licenses"
+
+
 def data_dir(
     install: Path | None = None,
     *,

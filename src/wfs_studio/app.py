@@ -71,7 +71,7 @@ from wfs_studio.gametdb import (
     remember_cover_miss,
 )
 from wfs_studio.icon import title_icon_png
-from wfs_studio.locations import data_dir
+from wfs_studio.locations import data_dir, license_dir
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.saves import (
     SaveRecord,
@@ -90,6 +90,7 @@ from wfs_studio.titles import (
     directory_size,
     load_size_cache,
     meta_stamp,
+    region_label,
     save_size_cache,
     scan_titles,
 )
@@ -1096,7 +1097,7 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, NAME_COL, name)
             self.table.setItem(row, ID_COL, QTableWidgetItem(record.title_id))
             self.table.setItem(row, PRODUCT_COL, QTableWidgetItem(record.product_code))
-            self.table.setItem(row, REGION_COL, QTableWidgetItem(record.region))
+            self.table.setItem(row, REGION_COL, QTableWidgetItem(region_label(record.region)))
             size_item = SizeItem("…")
             size_item.setData(Qt.ItemDataRole.UserRole, -1)
             self.table.setItem(row, SIZE_COL, size_item)
@@ -1215,7 +1216,7 @@ class MainWindow(QMainWindow):
             record.name,
             record.title_id,
             record.product_code or "No product code",
-            f"{record.kind} · {record.region or 'region unknown'} · version {record.version or '?'}",
+            f"{record.kind} · {region_label(record.region) or 'region unknown'} · version {record.version or '?'}",
         ]
         if record.publisher:
             lines.append(record.publisher)
@@ -1723,9 +1724,15 @@ class MainWindow(QMainWindow):
             self,
             "About WFS Studio",
             "WFS Studio " + __version__ + "\n\n"
-            "A GUI for your own Wii U WFS dumps. Title names come from meta.xml, "
-            "with GameTDB used as a second lookup.\n\n"
-            "wfs-extract is the official MIT-licensed tool by koolkdev, pinned at v1.2.3.\n\n"
+            "A GUI for your own Wii U WFS dumps. Title names come from meta.xml. "
+            "GameTDB (https://www.gametdb.com/) is a second lookup. "
+            "That list and its artwork stay in the cache on this computer.\n\n"
+            "wfs-extract is the official MIT-licensed tool by koolkdev, pinned at v1.2.3. "
+            "Those tools are built on koolkdev's wfslib.\n\n"
+            "Save backups use the folder layout from SaveMii "
+            "(https://github.com/w3irDv/savemii). This program does not include SaveMii's source.\n\n"
+            "The window toolkit is PySide6, which is Qt, under the LGPL. "
+            "WFS Studio's own source stays MIT. License files: " + str(license_dir(self.root)) + "\n\n"
             "otp.bin and seeprom.bin stay on your machine. This program does not upload them.\n\n"
             "Crash log: " + str(log_path(self.data)),
         )
