@@ -67,6 +67,7 @@ from wfs_studio.gametdb import (
     remember_cover,
     remember_cover_miss,
 )
+from wfs_studio.icon import title_icon_png
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.saves import SaveRecord, backup_saves, scan_saves
 from wfs_studio.settings import load_settings, save_settings
@@ -1086,53 +1087,61 @@ class MainWindow(QMainWindow):
         self._cover_generation += 1
         generation = self._cover_generation
         self.cover_label.setPixmap(QPixmap())
-        if not record.gametdb_id:
+        if record.gametdb_id:
+            banner = self._banner_from_zip(record.gametdb_id)
+            if banner is not None and self._show_cover(banner):
+                return
+            status, data = read_cover_cache(self.root / "cache", record.gametdb_id)
+            if status == "hit" and isinstance(data, (bytes, bytearray)) and self._show_cover(data):
+                return
+            if status != "miss":
+                if not self._show_title_icon(record):
+                    self.cover_label.setText("Loading disc")
+                worker = CoverWorker(
+                    generation,
+                    disc_urls(record.gametdb_id, record.region),
+                    self.root / "cache",
+                    record.gametdb_id,
+                    self._cancel_covers,
+                )
+                worker.ready.connect(self._cover_ready)
+                self._track(worker)
+                return
+        if not self._show_title_icon(record):
             self.cover_label.setText("No disc image")
-            return
-        banner = self._banner_from_zip(record.gametdb_id)
-        if banner is not None:
-            self._show_cover(banner)
-            return
-        status, data = read_cover_cache(self.root / "cache", record.gametdb_id)
-        if status == "hit" and isinstance(data, (bytes, bytearray)):
-            self._show_cover(data)
-            return
-        if status == "miss":
-            self.cover_label.setText("No disc image")
-            return
-        self.cover_label.setText("Loading disc")
-        worker = CoverWorker(
-            generation,
-            disc_urls(record.gametdb_id, record.region),
-            self.root / "cache",
-            record.gametdb_id,
-            self._cancel_covers,
-        )
-        worker.ready.connect(self._cover_ready)
-        self._track(worker)
 
-    def _show_cover(self, data: bytes | bytearray) -> None:
+    def _show_title_icon(self, record: TitleRecord) -> bool:
+        png = title_icon_png(record.path / "meta" / "iconTex.tga")
+        return png is not None and self._show_cover(png)
+
+    def _show_cover(self, data: bytes | bytearray) -> bool:
         pixmap = QPixmap()
         if not pixmap.loadFromData(bytes(data)):
             self.cover_label.setText("No disc image")
             self.cover_label.setPixmap(QPixmap())
-            return
+            return False
         scaled = pixmap.scaled(
             self.cover_label.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        if scaled.isNull():
+            scaled = pixmap
         self.cover_label.setText("")
         self.cover_label.setPixmap(scaled)
+        return True
 
     def _cover_ready(self, generation: int, data: object) -> None:
         if self._closing or generation != self._cover_generation:
             return
-        if not isinstance(data, (bytes, bytearray)):
-            self.cover_label.setText("No disc image")
-            self.cover_label.setPixmap(QPixmap())
+        if isinstance(data, (bytes, bytearray)) and self._show_cover(data):
             return
-        self._show_cover(data)
+        row = self.table.currentRow()
+        record = self._record_for_row(row) if row >= 0 else None
+        if record is not None and self._show_title_icon(record):
+            return
+        self.cover_label.setText("No disc image")
+        self.cover_label.setPixmap(QPixmap())
 
     def _index_cover_zip(self) -> None:
         path = Path(self.settings.get("cover_zip", ""))

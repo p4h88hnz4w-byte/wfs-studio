@@ -1,6 +1,6 @@
 # Where this is going
 
-What is already built is listed in `CHANGELOG.md`. This file is only the work that is still ahead. None of it is started.
+What is already built is listed in `CHANGELOG.md`. This file is the work that is still ahead, and the plan for shipping an app. No frozen app has been built. Nothing has been pushed.
 
 ## Not this program
 
@@ -10,9 +10,50 @@ Save editing. WFS Studio copies a save folder so you have a backup on the PC. Ch
 
 ## Possible next steps
 
-- Show the title's own `meta/iconTex.tga` when a GameTDB banner is missing. The zip reader and the banner zip are already in place. This image is not read today.
 - A byte progress bar on the Extract tab. Stock `wfs-extract --verbose` prints `Dumping /path` before each file and has no size. That needs a small fork of the official tool. The official binary stays the default until a fork is tested.
-- Publishing. The tree is local only. A public or private remote waits until there is a GitHub account to push to. GameTDB files, dumps, and console keys stay out of git.
+- The GitHub account exists. The remote does not, until the README review is done and a push is requested. GameTDB files, dumps, and console keys stay out of git.
+
+## Release
+
+People who use this should not create a Python virtualenv. The `.venv` in this checkout is a development environment on this Mac (Homebrew Python 3.12, Apple Silicon). It is gitignored. It does not run on Linux, and it is not the file we publish.
+
+Ship one frozen app per machine type. The first two are the ones that match the machines we can actually support with the official `wfs-extract` builds already checksummed in `binaries.py`.
+
+| Artifact | Built on | Who can run it |
+| --- | --- | --- |
+| macOS `.app`, arm64 | This Mac | Apple Silicon |
+| Linux AppImage, x86_64 | A container whose glibc is 2.28 | Most current desktop x86_64 distros. See below. |
+| macOS `.app`, x86_64 | An Intel Mac, later | Intel Macs. Official `wfs-extract` already has a `macos-x64` zip. This Mac's Homebrew Python is arm64 only, so it cannot produce that app. |
+| Windows | Later | Official `wfs-extract` already has a `windows-x64` zip. |
+
+### Linux, and what "most distros" can mean
+
+The official extract tool publishes `linux-x86-64` and nothing else. There is no aarch64 build, no 32-bit build, and no musl build. A Raspberry Pi, an ARM server, and Alpine cannot run the extract step until upstream ships a binary for them. The Linux app we publish is x86_64.
+
+PySide6's x86_64 wheels are `manylinux_2_28`. That means glibc 2.28 or newer. In practice that is Ubuntu 20.04 and later, Debian 10 and later, RHEL 8 and later, current Fedora, and the Linux Mint and Pop!_OS releases based on those. It does not include Ubuntu 18.04, Debian 9, or other systems that stopped at an older glibc.
+
+The build machine decides the glibc floor. An AppImage built on a new Ubuntu links that newer glibc and then fails on Debian 10 with `GLIBC_2.xx not found`, even though the Qt wheel itself only needs 2.28. Build the AppImage inside a glibc 2.28 container (AlmaLinux 8 or a manylinux_2_28 image), not on this Mac and not on the newest distro.
+
+AppImage is one file to download and run. Flatpak and Snap confine the filesystem and raw devices. This program opens a folder the user picks and sometimes a USB device, so those stores are a poor fit. Some distros still need FUSE to mount an AppImage. The notes that ship with the file should say how to run it extracted when FUSE is missing.
+
+The aarch64 PySide6 wheels moved up to a much newer glibc. That does not change this plan. We still have no ARM `wfs-extract` to put next to them.
+
+### What the frozen app has to change in the code
+
+Today the program finds its files by walking up to `pyproject.toml`, then writes `cache/` and `vendor/` there. An AppImage and a `.app` are not a git checkout, and the AppImage filesystem is read-only. Packaging starts with that split:
+
+- A user data directory for settings, the GameTDB zip, disc art, and the title size cache. On Linux that is under the home directory. On macOS it is Application Support. `WFS_STUDIO_HOME` already overrides the root, but one override cannot be both the read-only install and the writable cache.
+- `wfs-extract` for that platform shipped beside the app, with koolkdev's MIT `LICENSE`, still checked by the SHA-256 in `binaries.py`. The download can stay as a fallback when the bundled binary is absent.
+- Qt kept as shared libraries inside the bundle, not compiled into the executable. PySide6 is LGPL. The app must include Qt's license and must document how to replace those libraries. A one-file blob that hides the Qt libraries is the wrong shape.
+
+### What does not go in the blob
+
+- The GameTDB zip, a cover pack, or disc art. The user still downloads those from the app, into the user data directory.
+- A dump, a game, `otp.bin`, or `seeprom.bin`.
+- `HANDOFF.md`, `cache/`, or `.venv`.
+- `wfs-file-injector` and `wfs-reencryptor` as features. The official zip contains them. The app still does not run them.
+
+No `.app` and no AppImage have been produced. Building them is a later step, after the path split above.
 
 ## Still out of scope
 

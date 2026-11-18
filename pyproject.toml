@@ -1,6 +1,6 @@
 [project]
 name = "wfs-studio"
-version = "0.4.0"
+version = "0.5.0"
 description = "Desktop GUI for browsing Wii U title dumps and running wfs-extract."
 readme = "README.md"
 requires-python = ">=3.10"

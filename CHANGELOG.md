@@ -1,6 +1,15 @@
 # Changelog
 
-Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. Nothing here has been pushed.
+Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. 0.5.0 is the next local change. Nothing here has been pushed.
+
+## 0.5.0
+
+The title's own icon when GameTDB has no picture.
+
+- The detail pane still prefers a banner from a cover zip, then a cached or downloaded GameTDB disc.
+- When none of those exist, or the disc lookup is still running, the pane shows `meta/iconTex.tga` from the dumped title.
+- A disc that arrives later replaces that icon. A known miss keeps the icon.
+- The TGA is the uncompressed 128×128 image Wii U titles store. It is decoded in the app and shown as a PNG. No icon file is added to the repo.
 
 ## 0.4.0
 

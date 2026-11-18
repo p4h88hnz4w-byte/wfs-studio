@@ -1,6 +1,8 @@
 import os
+import struct
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from wfs_studio.app import CoverWorker, MainWindow, SizeItem, SizeWorker
 from wfs_studio.copy_job import CopyProgress
-from wfs_studio.gametdb import parse_titles, remember_cover_miss
+from wfs_studio.gametdb import parse_titles, remember_cover, remember_cover_miss
+from wfs_studio.icon import rgba_png
 from wfs_studio.titles import TitleRecord
 
 META = """<?xml version="1.0" encoding="utf-8"?>
@@ -239,3 +242,110 @@ def test_close_while_busy_cancels_and_returns(tmp_path: Path, monkeypatch):
     assert window._cancel_sizes.is_set()
     assert window._cancel_covers.is_set()
     assert time.monotonic() - started < 2
+
+
+def _icon_tga(b: int, g: int, r: int) -> bytes:
+    header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 32, 0x28)
+    return header + bytes((b, g, r, 255))
+
+
+def _dump_with_icon(tmp_path: Path, tga: bytes) -> None:
+    folder = tmp_path / "dump" / "usr" / "title" / "00050000" / "10112200"
+    (folder / "meta").mkdir(parents=True)
+    (folder / "content").mkdir()
+    (folder / "meta" / "meta.xml").write_text(META, encoding="utf-8")
+    (folder / "meta" / "iconTex.tga").write_bytes(tga)
+
+
+def _select_scanned_title(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan()
+    app.processEvents()
+    for worker in list(window._workers):
+        assert worker.wait(5000)
+    app.processEvents()
+    window.table.setCurrentCell(0, 2)
+    app.processEvents()
+    for worker in list(window._workers):
+        assert worker.wait(5000)
+    app.processEvents()
+    return window
+
+
+def _center_rgb(window: MainWindow) -> tuple[int, int, int]:
+    image = window.cover_label.pixmap().toImage()
+    color = image.pixelColor(image.width() // 2, image.height() // 2)
+    return color.red(), color.green(), color.blue()
+
+
+def test_title_icon_shows_when_there_is_no_disc(tmp_path: Path, monkeypatch):
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("disc fetch")
+
+    monkeypatch.setattr("wfs_studio.app.fetch_png", fail_fetch)
+    _dump_with_icon(tmp_path, _icon_tga(255, 0, 0))
+    window = _select_scanned_title(tmp_path)
+    assert window.records[0].gametdb_id == ""
+    assert _center_rgb(window) == (0, 0, 255)
+    window.close()
+
+
+def test_cached_disc_is_preferred_over_the_title_icon(tmp_path: Path, monkeypatch):
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("disc fetch")
+
+    monkeypatch.setattr("wfs_studio.app.fetch_png", fail_fetch)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "wiiutdb.txt").write_text("TITLES = test (version: 1)\nAAFE01 = Bayonetta\n", encoding="utf-8")
+    remember_cover(cache, "AAFE01", rgba_png(1, 1, bytes((255, 0, 0, 255))))
+    _dump_with_icon(tmp_path, _icon_tga(255, 0, 0))
+    window = _select_scanned_title(tmp_path)
+    assert _center_rgb(window) == (255, 0, 0)
+    window.close()
+
+
+def test_banner_zip_is_preferred_over_the_title_icon(tmp_path: Path, monkeypatch):
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("disc fetch")
+
+    monkeypatch.setattr("wfs_studio.app.fetch_png", fail_fetch)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "wiiutdb.txt").write_text("TITLES = test (version: 1)\nAAFE01 = Bayonetta\n", encoding="utf-8")
+    archive = tmp_path / "banners.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("AAFE01.png", rgba_png(1, 1, bytes((0, 255, 0, 255))))
+    _dump_with_icon(tmp_path, _icon_tga(255, 0, 0))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.settings["cover_zip"] = str(archive)
+    window._index_cover_zip()
+    window.show()
+    app.processEvents()
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan()
+    app.processEvents()
+    for worker in list(window._workers):
+        worker.wait(5000)
+    app.processEvents()
+    window.table.setCurrentCell(0, 2)
+    app.processEvents()
+    assert _center_rgb(window) == (0, 255, 0)
+    window.close()
+
+
+def test_a_missed_disc_keeps_the_title_icon(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("wfs_studio.app.fetch_png", lambda *_args, **_kwargs: ("missing", None))
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "wiiutdb.txt").write_text("TITLES = test (version: 1)\nAAFE01 = Bayonetta\n", encoding="utf-8")
+    _dump_with_icon(tmp_path, _icon_tga(255, 0, 0))
+    window = _select_scanned_title(tmp_path)
+    assert _center_rgb(window) == (0, 0, 255)
+    assert (cache / "covers" / "AAFE01.missing").is_file()
+    window.close()
