@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
 
 from wfs_studio.app import MainWindow
@@ -42,3 +43,31 @@ def test_window_credits_the_track_and_stays_quiet_offscreen(tmp_path: Path):
     window._persist()
     assert load_settings(tmp_path)["menu_music"] is False
     window.close()
+
+
+def test_silence_clears_the_track_instead_of_calling_stop(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path, data=tmp_path)
+
+    class Player:
+        def __init__(self):
+            self.urls: list[QUrl] = []
+            self.stopped = False
+
+        def source(self) -> QUrl:
+            return QUrl() if self.urls else QUrl.fromLocalFile("/tmp/menu.opus")
+
+        def setSource(self, url: QUrl) -> None:
+            self.urls.append(url)
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    player = Player()
+    window._player = player
+    window._stop_menu_music()
+    assert player.urls and player.urls[0].isEmpty()
+    assert player.stopped is False
+    window._player = None
+    window.close()
+    app.processEvents()

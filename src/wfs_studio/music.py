@@ -8,8 +8,13 @@ crossfade joins the ending to the opening, so a player loop does not click.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# FFmpeg's info log prints the file banner. Warning prints the Opus
+# timestamp note. Neither is a failure. Errors stay visible.
+_AV_LOG_ERROR = 16
 
 MENU_VOLUME = 0.35
 MENU_CREDIT = (
@@ -29,3 +34,32 @@ def menu_track() -> Path | None:
         if frozen.is_file():
             return frozen
     return None
+
+
+def quiet_ffmpeg_logs() -> None:
+    """Hide Qt's FFmpeg banner. The player still reports a real open error."""
+    try:
+        import ctypes
+
+        import PySide6
+        from PySide6.QtCore import QLoggingCategory
+    except ImportError:
+        return
+    rules = os.environ.get("QT_LOGGING_RULES", "")
+    quiet = "qt.multimedia.ffmpeg=false"
+    if quiet not in rules:
+        rules = f"{rules}\n{quiet}" if rules else quiet
+    QLoggingCategory.setFilterRules(rules)
+    lib_dir = Path(PySide6.__file__).resolve().parent / "Qt" / "lib"
+    names = (
+        sorted(lib_dir.glob("libavutil.*.dylib"))
+        + sorted(lib_dir.glob("libavutil.so*"))
+        + sorted(lib_dir.glob("avutil*.dll"))
+    )
+    if not names:
+        return
+    try:
+        library = ctypes.CDLL(str(names[-1]))
+        library.av_log_set_level(_AV_LOG_ERROR)
+    except OSError:
+        return

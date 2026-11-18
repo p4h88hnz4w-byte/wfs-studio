@@ -80,7 +80,7 @@ from wfs_studio.gametdb import (
 )
 from wfs_studio.icon import title_icon_png
 from wfs_studio.locations import data_dir, license_dir
-from wfs_studio.music import MENU_CREDIT, MENU_VOLUME, menu_track
+from wfs_studio.music import MENU_CREDIT, MENU_VOLUME, menu_track, quiet_ffmpeg_logs
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.saves import (
     SaveRecord,
@@ -402,6 +402,7 @@ class MainWindow(QMainWindow):
         self._workers: list[QThread] = []
         self._player = None
         self._audio = None
+        self._releasing_music = False
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
         self._build()
@@ -1893,11 +1894,12 @@ class MainWindow(QMainWindow):
             return
         if not self.menu_music_action.isChecked():
             return
-        if self._player is not None:
-            self._player.play()
-            return
+        quiet_ffmpeg_logs()
         path = menu_track()
         if path is None:
+            return
+        if self._player is not None:
+            self._play_menu_track(self._player, path)
             return
         try:
             from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -1907,11 +1909,15 @@ class MainWindow(QMainWindow):
         audio.setVolume(MENU_VOLUME)
         player = QMediaPlayer(self)
         player.setAudioOutput(audio)
-        player.setSource(QUrl.fromLocalFile(str(path)))
-        player.setLoops(QMediaPlayer.Loops.Infinite)
         player.errorOccurred.connect(self._on_menu_music_error)
         self._audio = audio
         self._player = player
+        self._play_menu_track(player, path)
+
+    def _play_menu_track(self, player, path: Path) -> None:
+        quiet_ffmpeg_logs()
+        player.setSource(QUrl.fromLocalFile(str(path)))
+        player.setLoops(type(player).Loops.Infinite)
         player.play()
 
     def _on_menu_music_error(self, error, _message: str = "") -> None:
@@ -1922,8 +1928,24 @@ class MainWindow(QMainWindow):
         self._stop_menu_music()
 
     def _stop_menu_music(self) -> None:
-        if self._player is not None:
-            self._player.stop()
+        """Release the track without ``QMediaPlayer.stop()``.
+
+        ``stop()`` returns at once, and then quitting the application does
+        not. On a Mac that holds the process for more than 20 seconds after
+        the window is gone. Clearing the source ends the sound and lets the
+        process exit with the window.
+        """
+        player = self._player
+        if player is None or self._releasing_music:
+            return
+        self._releasing_music = True
+        try:
+            source = player.source()
+            if source.isEmpty():
+                return
+            player.setSource(QUrl())
+        finally:
+            self._releasing_music = False
 
     def closeEvent(self, event) -> None:
         if self._closing:

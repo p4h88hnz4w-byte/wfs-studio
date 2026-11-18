@@ -10,6 +10,11 @@ The window plays menu music.
 - File → Menu music turns the music off. That choice is remembered. Closing the window stops playback.
 - The introduction now says the program is for Mac and Linux, inspired by Wii Backup Manager, and that copying a dump is the way into a backup or into Cemu.
 
+Hot fix 2. Closing the window no longer waits on the menu player.
+
+- `QMediaPlayer.stop()` let the process sit for more than 20 seconds after the window closed. The track is cleared instead, and the process exits with the window.
+- The FFmpeg file banner and the Opus timestamp note are not printed in the terminal.
+
 ## 0.7.2
 
 The Linux installer no longer downloads vcpkg.
