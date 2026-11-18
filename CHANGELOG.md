@@ -1,6 +1,6 @@
 # Changelog
 
-Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. 0.5.0 is the next local change. Nothing here has been pushed.
+Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. 0.5.0 is the current release. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
 ## 0.5.0
 

@@ -1,6 +1,6 @@
 # Where this is going
 
-What is already built is listed in `CHANGELOG.md`. This file is the work that is still ahead, and the plan for shipping an app. No frozen app has been built. Nothing has been pushed.
+What is already built is listed in `CHANGELOG.md`. This file is the work that is still ahead, and the plan for shipping an app. No frozen app has been built. The source is at [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
 ## Not this program
 
@@ -11,7 +11,7 @@ Save editing. WFS Studio copies a save folder so you have a backup on the PC. Ch
 ## Possible next steps
 
 - A byte progress bar on the Extract tab. Stock `wfs-extract --verbose` prints `Dumping /path` before each file and has no size. That needs a small fork of the official tool. The official binary stays the default until a fork is tested.
-- The GitHub account exists. The remote does not, until the README review is done and a push is requested. GameTDB files, dumps, and console keys stay out of git.
+- The source repository is published. GameTDB files, dumps, and console keys stay out of git.
 
 ## Release
 

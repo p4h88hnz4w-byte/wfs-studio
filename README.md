@@ -13,7 +13,7 @@ WFS Studio is a desktop program for your own Wii U backups. Version 0.5.0. It is
 ## Run
 
 ```bash
-cd ~/Documents/Git/wfs-studio
+cd wfs-studio
 source .venv/bin/activate
 python -m wfs_studio
 ```
@@ -85,8 +85,9 @@ Reading a raw USB device may require an administrator shell. The window shows th
 ## Setup
 
 ```bash
-cd ~/Documents/Git/wfs-studio
-/opt/homebrew/opt/python@3.12/bin/python3.12 -m venv .venv
+git clone --recurse-submodules https://github.com/p4h88hnz4w-byte/wfs-studio.git
+cd wfs-studio
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 python -m wfs_studio.binaries
