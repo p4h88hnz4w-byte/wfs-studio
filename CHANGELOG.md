@@ -15,6 +15,8 @@ Hot fix 2. Closing the window no longer waits on the menu player.
 - `QMediaPlayer.stop()` let the process sit for more than 20 seconds after the window closed. The track is cleared instead, and the process exits with the window.
 - The FFmpeg file banner and the Opus timestamp note are not printed in the terminal.
 
+Hot fix 3. The opening paragraph is the program description: inspired by Wii Backup Manager, for Mac and Linux, a Python window around official wfs-tools v1.2.3 wfs-extract, intended for copying a Wii U hard drive into a backup or into folders Cemu can open.
+
 ## 0.7.2
 
 The Linux installer no longer downloads vcpkg.
