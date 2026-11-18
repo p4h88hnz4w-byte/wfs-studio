@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.3
+
+A crash writes a traceback to the user data folder.
+
+- The file is `cache/wfs-studio.log`. A checkout keeps it in the project. A frozen app uses Application Support on macOS, `~/.local/share/wfs-studio` on Linux, and `%APPDATA%\WFS Studio` on Windows. `WFS_STUDIO_DATA` overrides that folder.
+- The log records the version and system at startup, an uncaught Python error, and a native fault. About WFS Studio shows the path. The file stays on your computer.
+
 ## 0.6.2
 
 Downloads will be attached to a [GitHub Release](https://github.com/p4h88hnz4w-byte/wfs-studio/releases). The git tree stays source.

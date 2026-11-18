@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
 import time
 import zipfile
@@ -43,6 +44,8 @@ from PySide6.QtWidgets import (
 
 from wfs_studio import __version__
 from wfs_studio.binaries import ensure_binary, installed_binary, repo_root
+from wfs_studio.crashlog import install as install_crash_log
+from wfs_studio.crashlog import log_failure, log_path
 from wfs_studio.copy_job import CopyResult, copy_game_data, copy_titles, game_folder_name
 from wfs_studio.extract import (
     ExtractRequest,
@@ -104,6 +107,7 @@ class ScanWorker(QThread):
         try:
             self.succeeded.emit(scan_titles(self.source))
         except Exception as exc:
+            log_failure("Scan failed")
             self.failed.emit(str(exc))
 
 
@@ -155,6 +159,8 @@ class SizeWorker(QThread):
             payload: tuple[str, int] | None = None
             try:
                 payload = self._measure(record, cache, lock)
+            except Exception:
+                log_failure(f"Size measure failed for {record.path}")
             finally:
                 results.put(payload)
 
@@ -205,6 +211,7 @@ class CopyWorker(QThread):
             )
             self.succeeded.emit(result)
         except Exception as exc:
+            log_failure("Copy failed")
             self.failed.emit(str(exc))
 
 
@@ -231,6 +238,7 @@ class SaveBackupWorker(QThread):
             )
             self.succeeded.emit(result)
         except Exception as exc:
+            log_failure("Save backup failed")
             self.failed.emit(str(exc))
 
 
@@ -246,6 +254,7 @@ class FetchWorker(QThread):
         try:
             self.succeeded.emit(self._fn())
         except Exception as exc:
+            log_failure("Download failed")
             self.failed.emit(str(exc))
 
 
@@ -268,6 +277,13 @@ class CoverWorker(QThread):
         self.cancel = cancel
 
     def run(self) -> None:
+        try:
+            self._fetch()
+        except Exception:
+            log_failure("Cover download failed")
+            self.ready.emit(self.generation, None)
+
+    def _fetch(self) -> None:
         status, data = read_cover_cache(self.cache, self.gametdb_id)
         if status == "hit":
             self.ready.emit(self.generation, data)
@@ -1588,7 +1604,8 @@ class MainWindow(QMainWindow):
             "A GUI for your own Wii U WFS dumps. Title names come from meta.xml, "
             "with GameTDB used as a second lookup.\n\n"
             "wfs-extract is the official MIT-licensed tool by koolkdev, pinned at v1.2.3.\n\n"
-            "otp.bin and seeprom.bin stay on your machine. This program does not upload them.",
+            "otp.bin and seeprom.bin stay on your machine. This program does not upload them.\n\n"
+            "Crash log: " + str(log_path(self.data)),
         )
 
     def closeEvent(self, event) -> None:
@@ -1803,8 +1820,21 @@ def apply_theme(app: QApplication) -> None:
     )
 
 
+class WfsApplication(QApplication):
+    def notify(self, receiver, event):
+        try:
+            return super().notify(receiver, event)
+        except Exception:
+            log_failure("Unhandled error in the window")
+            return False
+
+
 def main() -> None:
-    app = QApplication([])
+    try:
+        install_crash_log(data_dir(repo_root()))
+    except Exception:
+        sys.__excepthook__(*sys.exc_info())
+    app = WfsApplication([])
     apply_theme(app)
     window = MainWindow()
     window.show()

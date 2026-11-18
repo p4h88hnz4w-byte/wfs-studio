@@ -1,12 +1,12 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.2. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.3. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
 
 `CHANGELOG.md` is the record of what has been built. `FUTURE.md` is what is still ahead. The short version:
 
 | | |
 | --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout. Run `wfs-extract` on your own MLC or USB image. |
+| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout. Run `wfs-extract` on your own MLC or USB image. Write a crash traceback to `cache/wfs-studio.log`. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
 | Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. The plan is in `FUTURE.md`. |
 
@@ -69,6 +69,19 @@ SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.
 
 `cache/settings.json` stores the folders you pick, including key-file paths. It stays in `cache/` on your computer.
 
+## Crash log
+
+An unexpected error appends a traceback to `cache/wfs-studio.log`. About WFS Studio shows the full path. The same folder holds settings. It is not the shell's working directory: a launch from the Dock or Start Menu has no useful current directory, and a `.app` bundle cannot keep files inside itself.
+
+| How you run it | Log |
+| --- | --- |
+| This checkout | `cache/wfs-studio.log` in the project |
+| Frozen macOS app | `~/Library/Application Support/WFS Studio/cache/wfs-studio.log` |
+| Frozen Linux app | `~/.local/share/wfs-studio/cache/wfs-studio.log`, or `$XDG_DATA_HOME/wfs-studio/cache/wfs-studio.log` |
+| Frozen Windows app | `%APPDATA%\WFS Studio\cache\wfs-studio.log` |
+
+`WFS_STUDIO_DATA` overrides that folder. The log starts with the version and the system. It keeps about 512 KB, and the previous copy is `wfs-studio.log.1`. It stays on your computer.
+
 ## What you need
 
 Each person supplies their own console data. This repository does not include a Wii U drive image, games, `otp.bin`, or `seeprom.bin`.
@@ -115,7 +128,7 @@ third_party/wfs-tools/   Upstream source at v1.2.3
 packaging/licenses/ Qt and app license text copied into a frozen build
 Makefile            Builds dist/ and can upload a GitHub Release
 vendor/             Official binaries after download, on your machine
-cache/              GameTDB list, disc images, and settings, on your machine
+cache/              GameTDB list, disc images, settings, and wfs-studio.log, on your machine
 dist/               Built .app, .zip, and .dmg, on your machine
 ```
 
