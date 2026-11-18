@@ -2,6 +2,12 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.2
+
+The Linux installer no longer downloads vcpkg.
+
+- An empty working directory gets a shallow clone of this repo and the `third_party/wfs-tools` submodule. The nested `wfslib` and `vcpkg` trees are not needed to run the window, and they are not cloned.
+
 ## 0.7.1
 
 The Linux installer accepts an alias that contains a hyphen.

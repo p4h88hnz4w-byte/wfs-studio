@@ -100,7 +100,8 @@ if [[ ! -f "$work/pyproject.toml" ]]; then
     echo "That folder has no checkout to install." >&2
     exit 1
   fi
-  git clone --recurse-submodules "$REPO_URL" "$work"
+  git clone --depth 1 "$REPO_URL" "$work"
+  git -C "$work" submodule update --init --depth 1 third_party/wfs-tools
 fi
 
 python_bin="$work/.venv/bin/python"
