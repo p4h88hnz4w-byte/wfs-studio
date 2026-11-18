@@ -2188,6 +2188,12 @@ def request_interrupt(app) -> None:
 
 
 def main() -> None:
+    # The PipeWire backend deadlocks inside this process: the audio call
+    # waits for a thread that has to re-enter the Python notify() override.
+    # PulseAudio on this machine is PipeWire's compatibility layer, and it
+    # does not deadlock.
+    if sys.platform.startswith("linux"):
+        os.environ.setdefault("QT_AUDIO_BACKEND", "PulseAudio")
     try:
         install_crash_log(data_dir(repo_root()))
     except Exception:

@@ -19,7 +19,7 @@ Hot fix 3. The opening paragraph is the program description: inspired by Wii Bac
 
 Hot fix 4. The window opens on Linux again.
 
-- Menu music was starting while the window was being built, and again while Wayland was still showing it. On PipeWire that call never returned, so the alias sat there. The track now starts once the event loop is running, and the window is shown after that.
+- Menu music was starting while the window was being built. On Linux the PipeWire audio backend then waits forever, including from the window's event handler. Linux uses the PulseAudio backend instead, the track starts once the event loop is running, and the window is shown after that.
 
 ## 0.7.2
 
