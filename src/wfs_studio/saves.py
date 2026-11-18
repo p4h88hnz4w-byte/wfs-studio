@@ -238,6 +238,25 @@ def with_archive_suffix(path: Path, fmt: str) -> Path:
     return path.with_name(path.name + suffix)
 
 
+def _archive_member(root: Path, name: str) -> str:
+    """Return a relative directory inside ``root``. Nested titles are allowed."""
+    if not name or "\\" in name or "\x00" in name:
+        raise PathIssue(f"Unsafe folder name: {name}")
+    path = Path(name)
+    if path.is_absolute():
+        raise PathIssue(f"Unsafe folder name: {name}")
+    parts = path.parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise PathIssue(f"Unsafe folder name: {name}")
+    folder = root.joinpath(*parts)
+    if not folder.is_dir():
+        raise PathIssue(f"Missing folder: {name}")
+    resolved = folder.resolve()
+    if resolved == root or not _is_inside(resolved, root):
+        raise PathIssue(f"Unsafe folder name: {name}")
+    return Path(*parts).as_posix()
+
+
 def write_save_archive(
     dest_root: Path,
     folder_names: list[str],
@@ -245,19 +264,18 @@ def write_save_archive(
     *,
     fmt: str | None = None,
 ) -> Path:
-    """Write the named backup folders into one archive next to, not inside, ``dest_root``."""
+    """Write the named folders into one archive next to, not inside, ``dest_root``.
+
+    A name may be a nested relative directory, such as ``00050000/10112200``.
+    The archive is the same one the system uses: a zip on a Mac, and 7z or a
+    bzip2 tar on Linux.
+    """
     if not folder_names:
-        raise PathIssue("No save folders to archive.")
+        raise PathIssue("No folders to archive.")
     root = dest_root.expanduser().resolve()
     if not root.is_dir():
         raise PathIssue("The backup folder does not exist.")
-    names: list[str] = []
-    for name in folder_names:
-        if not name or name in {".", ".."} or "/" in name or "\\" in name:
-            raise PathIssue(f"Unsafe folder name: {name}")
-        if not (root / name).is_dir():
-            raise PathIssue(f"Missing backup folder: {name}")
-        names.append(name)
+    names = [_archive_member(root, name) for name in folder_names]
     kind = fmt or archive_format()
     if kind not in {"zip", "7z", "bzip2"}:
         raise PathIssue(f"Unknown archive type: {kind}")

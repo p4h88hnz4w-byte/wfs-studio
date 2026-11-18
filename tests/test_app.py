@@ -391,6 +391,67 @@ def test_version_sits_in_the_top_right(tmp_path: Path):
     window.close()
 
 
+def test_checking_every_title_offers_an_archive(tmp_path: Path, monkeypatch):
+    folder = tmp_path / "dump" / "usr" / "title" / "00050000" / "10112200"
+    (folder / "meta").mkdir(parents=True)
+    (folder / "content").mkdir()
+    (folder / "meta" / "meta.xml").write_text(META, encoding="utf-8")
+    (folder / "content" / "data.bin").write_bytes(b"1234")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan()
+    app.processEvents()
+    for worker in list(window._workers):
+        worker.wait(5000)
+    app.processEvents()
+    assert window.table.rowCount() == 1
+    monkeypatch.setattr(
+        "wfs_studio.app.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    target = tmp_path / "titles.zip"
+    monkeypatch.setattr(
+        "wfs_studio.app.QFileDialog.getSaveFileName",
+        lambda *_args, **_kwargs: (str(target), ""),
+    )
+    window._set_visible_checks(True)
+    assert len(window._checked_records()) == 1
+    assert window._title_archive == target
+    window.close()
+
+
+def test_copy_worker_archives_the_copied_title(tmp_path: Path):
+    folder = tmp_path / "title"
+    (folder / "meta").mkdir(parents=True)
+    (folder / "content").mkdir()
+    (folder / "meta" / "meta.xml").write_text("<menu></menu>", encoding="utf-8")
+    (folder / "content" / "data.bin").write_bytes(b"1234")
+    dest = tmp_path / "out"
+    dest.mkdir()
+    archive = tmp_path / "titles.zip"
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    from wfs_studio.app import CopyWorker
+
+    worker = CopyWorker(
+        [(folder, "Bayonetta [00050000-10112200]")],
+        dest,
+        True,
+        threading.Event(),
+        True,
+        archive,
+        ["Bayonetta [00050000-10112200]"],
+    )
+    worker.run()
+    assert archive.is_file()
+    assert worker.archive_note.startswith("Archive written to ")
+    with zipfile.ZipFile(archive) as bundle:
+        assert any(item.endswith("data.bin") for item in bundle.namelist())
+
+
 def test_select_all_saves_offers_an_archive(tmp_path: Path, monkeypatch):
     profile = tmp_path / "dump" / "usr" / "save" / "00050000" / "10112200" / "user" / "80000001"
     profile.mkdir(parents=True)

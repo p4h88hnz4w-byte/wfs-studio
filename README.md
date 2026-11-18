@@ -1,12 +1,12 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.8. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.9. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
 | | |
 | --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Write a crash traceback to `cache/wfs-studio.log`. |
+| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Write a crash traceback to `cache/wfs-studio.log`. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
 | Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. |
 
@@ -25,7 +25,7 @@ The first time, create the virtualenv as in Setup below.
 1. Choose the extracted dump, a `usr/title` folder, or one title folder.
 2. Scan. Names come from `longname_*` in `meta/meta.xml`. Each row shows that title's `meta/iconTex.tga` beside the name. The Region column reads the title's region bits: USA is NTSC-U, EUR is PAL (Europe, and Australian consoles, which use the EUR region), and JPN is NTSC-J. USA+EUR means the title is allowed on both. The folder layout is the same for each, and the title id keeps those copies apart. In a code such as `WUP-P-APKE`, the `P` is the package type. The region letter is the `E` in `APKE`. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
 3. Download GameTDB, or choose a `wiiutdb.zip` you already have. The zip stays compressed in `cache/wiiutdb.zip`. The app reads `wiiutdb.xml` from inside it. A plain `cache/wiiutdb.txt` is used only when no zip is available. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`. Banner zip reads `<id>.png` from a cover archive you already have. Without one, disc pictures are saved under `cache/covers/` after a download. If there is no banner and no disc, the pane shows `meta/iconTex.tga` from that title. A disc that arrives later replaces the icon.
-4. Check the titles, choose a destination, and press Transfer.
+4. Check the titles, choose a destination, and press Transfer. Checking every title asks where to write an archive: a zip on a Mac, and 7z or a bzip2 tar on Linux. The archive is written after the copy and sits outside the destination folder. A partial selection copies only the checked titles.
 
 Game data copy is on by default. Each title is written to `Title Name [00050000-lowid]/`, and `usr/save` is not included. The window then checks that the destination file count and byte total match the source. Turn the option off to keep the path relative to the scanned folder, for example `usr/title/00050000/101DF400/...`. Files that already exist at the destination with the same size are skipped. A different size is replaced.
 

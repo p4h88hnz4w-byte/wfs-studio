@@ -106,6 +106,18 @@ def test_archive_must_sit_outside_the_backup_folder(tmp_path: Path):
         write_save_archive(root, [name], root / "inside.zip", fmt="zip")
 
 
+def test_archive_accepts_a_nested_title_and_rejects_a_parent_path(tmp_path: Path):
+    root = tmp_path / "copied"
+    nested = root / "00050000" / "10112200" / "content"
+    nested.mkdir(parents=True)
+    (nested / "data.bin").write_bytes(b"title")
+    zip_path = write_save_archive(root, ["00050000/10112200"], tmp_path / "titles.zip", fmt="zip")
+    with zipfile.ZipFile(zip_path) as bundle:
+        assert any(item.endswith("data.bin") for item in bundle.namelist())
+    with pytest.raises(PathIssue):
+        write_save_archive(root, ["00050000/../copied"], tmp_path / "escape.zip", fmt="zip")
+
+
 def test_savemii_folder_name_replaces_forbidden_characters():
     assert fat32_title("Pokkén: Tournament") == "Pokk_n_ Tournament"
     name = savemii_dir_name("Pokkén: Tournament", "00050000", "101DF400")

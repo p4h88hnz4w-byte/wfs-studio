@@ -65,6 +65,58 @@ def _ignored(name: str) -> bool:
 _FOLDER_UNSAFE = re.compile(r'[/\\:\x00-\x1f]')
 
 
+def planned_game_folders(names: list[str]) -> list[str]:
+    """Make each destination folder name unique without changing the title id."""
+    used: set[str] = set()
+    planned: list[str] = []
+    for raw in names:
+        name = raw.strip() or game_folder_name("", "")
+        candidate = name
+        number = 2
+        while candidate.casefold() in used:
+            candidate = f"{name} ({number})"
+            number += 1
+        used.add(candidate.casefold())
+        planned.append(candidate)
+    return planned
+
+
+def relative_archive_members(records) -> list[str]:
+    """Directories a relative copy writes under the destination.
+
+    A scan of one title folder copies ``code``, ``content``, and ``meta``
+    straight into the destination. A scan of a dump copies ``00050000/lowid``.
+    """
+    members: list[str] = []
+    for record in records:
+        relative = record.relative_path
+        if relative == Path("."):
+            members.extend(_child_dirs(record.path))
+        else:
+            members.append(relative.as_posix())
+    return members
+
+
+def _child_dirs(title: Path) -> list[str]:
+    names: list[str] = []
+    try:
+        iterator = os.scandir(title)
+    except OSError:
+        return names
+    with iterator:
+        for entry in iterator:
+            if _ignored(entry.name):
+                continue
+            try:
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            names.append(entry.name)
+    names.sort()
+    return names
+
+
 def game_folder_name(title: str, title_id: str) -> str:
     """Folder name for one title install. The title id keeps regions apart."""
     cleaned = " ".join(_FOLDER_UNSAFE.sub(" ", title).split()).strip(" .")
@@ -344,17 +396,13 @@ def copy_game_data(
     """
     if not jobs:
         raise ValueError("No titles were selected.")
-    used: set[str] = set()
-    planned: list[tuple[Path, str]] = []
-    for title, folder_name in jobs:
-        name = folder_name.strip() or game_folder_name("", "")
-        candidate = name
-        number = 2
-        while candidate.casefold() in used:
-            candidate = f"{name} ({number})"
-            number += 1
-        used.add(candidate.casefold())
-        planned.append((title, candidate))
+    planned = list(
+        zip(
+            (title for title, _name in jobs),
+            planned_game_folders([name for _title, name in jobs]),
+            strict=True,
+        )
+    )
 
     copied = 0
     total = 0

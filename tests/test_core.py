@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from wfs_studio.binaries import platform_key, safe_extract, sha256_file
-from wfs_studio.copy_job import copy_game_data, copy_titles, game_folder_name, tree_totals
+from wfs_studio.copy_job import (
+    copy_game_data,
+    copy_titles,
+    game_folder_name,
+    relative_archive_members,
+    tree_totals,
+)
 from wfs_studio.extract import (
     ExtractRequest,
     append_extract_chunk,
@@ -262,6 +268,16 @@ def test_copy_writes_destination_and_skips_matches(tmp_path: Path):
     )
     assert second.files_written == 0
     assert second.files_skipped == 2
+
+
+def test_relative_archive_members_follow_the_copy(tmp_path: Path):
+    source = tmp_path / "dump"
+    title = write_title(source, "00050000", "101df400", META, b"payload-bytes")
+    record = scan_titles(source)[0]
+    assert relative_archive_members([record]) == ["usr/title/00050000/101df400"]
+    alone = scan_titles(title)[0]
+    assert relative_archive_members([alone]) == ["content", "meta"]
+    assert title.is_dir()
 
 
 def test_game_data_copy_names_a_folder_and_leaves_saves(tmp_path: Path):

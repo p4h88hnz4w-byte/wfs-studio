@@ -2,6 +2,14 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.9
+
+Checking every title offers an archive, using the same system archiver as saves.
+
+- When every title is checked, the window asks where to put an archive. Check visible does this when it checks the whole list.
+- A Mac archive is a zip from `ditto`, the same kind Archive Utility writes. Linux uses `7z` when it is installed, and a `.tar.bz2` otherwise.
+- The archive is written after the copy, and it sits outside the destination folder. A partial selection still copies only the checked titles and does not write an archive.
+
 ## 0.6.8
 
 The region column names the video standard. PAL and NTSC-J titles use the same copy and save path as an NTSC-U title.

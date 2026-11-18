@@ -46,7 +46,14 @@ from wfs_studio import __version__
 from wfs_studio.binaries import ensure_binary, installed_binary, repo_root
 from wfs_studio.crashlog import install as install_crash_log
 from wfs_studio.crashlog import log_failure, log_path
-from wfs_studio.copy_job import CopyResult, copy_game_data, copy_titles, game_folder_name
+from wfs_studio.copy_job import (
+    CopyResult,
+    copy_game_data,
+    copy_titles,
+    game_folder_name,
+    planned_game_folders,
+    relative_archive_members,
+)
 from wfs_studio.extract import (
     ExtractRequest,
     append_extract_chunk,
@@ -202,6 +209,8 @@ class CopyWorker(QThread):
         skip_same_size: bool,
         cancel: threading.Event,
         game_data: bool = False,
+        archive: Path | None = None,
+        archive_members: list[str] | None = None,
     ):
         super().__init__()
         self.jobs = jobs
@@ -209,6 +218,9 @@ class CopyWorker(QThread):
         self.skip_same_size = skip_same_size
         self.cancel = cancel
         self.game_data = game_data
+        self.archive = archive
+        self.archive_members = archive_members or []
+        self.archive_note = ""
 
     def run(self) -> None:
         try:
@@ -220,6 +232,15 @@ class CopyWorker(QThread):
                 cancel=self.cancel,
                 on_progress=self.progress.emit,
             )
+            clean = not result.cancelled and not result.halted and not result.errors
+            packed = result.verified or not self.game_data
+            if self.archive is not None and clean and packed:
+                try:
+                    written = write_save_archive(self.dest, self.archive_members, self.archive)
+                    self.archive_note = f"Archive written to {written}"
+                except (OSError, PathIssue) as exc:
+                    log_failure("Title archive failed")
+                    self.archive_note = f"Archive failed: {exc}"
             self.succeeded.emit(result)
         except Exception as exc:
             log_failure("Copy failed")
@@ -374,6 +395,8 @@ class MainWindow(QMainWindow):
         self.save_records: list[SaveRecord] = []
         self._save_archive: Path | None = None
         self._save_archive_declined = False
+        self._title_archive: Path | None = None
+        self._title_archive_declined = False
         self._workers: list[QThread] = []
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
@@ -1027,6 +1050,8 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(True)
         self.records = annotate(records, self.database)
         self.sizes.clear()
+        self._title_archive = None
+        self._title_archive_declined = False
         self._fill_table()
         self.statusBar().showMessage(f"{len(self.records)} titles")
         if not self.records:
@@ -1180,10 +1205,48 @@ class MainWindow(QMainWindow):
                 item.setCheckState(state)
         self.table.blockSignals(False)
         self._update_checked_label()
+        if checked and self._all_titles_checked():
+            self._title_archive = None
+            self._title_archive_declined = False
+            self._offer_title_archive()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        if item.column() == CHECK_COL:
-            self._update_checked_label()
+        if item.column() != CHECK_COL:
+            return
+        self._update_checked_label()
+        if item.checkState() == Qt.CheckState.Checked and self._all_titles_checked():
+            self._offer_title_archive()
+
+    def _all_titles_checked(self) -> bool:
+        return bool(self.records) and len(self._checked_records()) == len(self.records)
+
+    def _offer_title_archive(self) -> None:
+        if self._title_archive is not None or self._title_archive_declined:
+            return
+        count = len(self.records)
+        answer = QMessageBox.question(
+            self,
+            "Archive titles",
+            f"All {count} titles are selected. Write them into an archive?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._title_archive_declined = True
+            return
+        fmt = archive_format()
+        suggested = Path.home() / f"WFS Studio titles{archive_suffix(fmt)}"
+        dest_text = self.dest_edit.text().strip()
+        if dest_text:
+            suggested = Path(dest_text).expanduser().parent / suggested.name
+        chosen, _selected = QFileDialog.getSaveFileName(
+            self,
+            "Title archive",
+            str(suggested),
+            archive_dialog_filter(fmt),
+        )
+        if not chosen:
+            self._title_archive_declined = True
+            return
+        self._title_archive = with_archive_suffix(Path(chosen), fmt)
 
     def _checked_records(self) -> list[TitleRecord]:
         chosen: list[TitleRecord] = []
@@ -1434,14 +1497,23 @@ class MainWindow(QMainWindow):
         game_data = self.game_data_box.isChecked()
         if game_data:
             detail = "Each title is written to its own folder. Save data under usr/save is not copied."
+            folder_names = planned_game_folders(
+                [game_folder_name(record.gametdb_name or record.name, record.title_id) for record in chosen]
+            )
         else:
             detail = "The copy keeps the path relative to the source."
-        answer = QMessageBox.question(
-            self,
-            "Copy titles",
+            folder_names = relative_archive_members(chosen)
+        archive = self._title_archive if len(chosen) == len(self.records) else None
+        if archive is None and self._all_titles_checked() and not self._title_archive_declined:
+            self._offer_title_archive()
+            archive = self._title_archive
+        message = (
             f"Copy {len(chosen)} titles ({size_text}) into {dest}?\n\n"
-            f"{detail}\nThe source is not changed or deleted.",
+            f"{detail}\nThe source is not changed or deleted."
         )
+        if archive is not None:
+            message += f"\n\nAn archive will also be written to {archive}."
+        answer = QMessageBox.question(self, "Copy titles", message)
         if answer != QMessageBox.StandardButton.Yes:
             return
         self._persist()
@@ -1460,7 +1532,15 @@ class MainWindow(QMainWindow):
         else:
             jobs = [(record.source_root, record.path) for record in chosen]
         self._last_copy_was_game_data = game_data
-        worker = CopyWorker(jobs, dest, self.skip_box.isChecked(), self._cancel_copy, game_data)
+        worker = CopyWorker(
+            jobs,
+            dest,
+            self.skip_box.isChecked(),
+            self._cancel_copy,
+            game_data,
+            archive,
+            folder_names if archive is not None else None,
+        )
         worker.progress.connect(self._copy_progress)
         worker.succeeded.connect(self._copy_finished)
         worker.failed.connect(self._copy_failed)
@@ -1507,6 +1587,9 @@ class MainWindow(QMainWindow):
                 self.copy_log.appendPlainText("Destination file count and byte total match the source.")
             else:
                 self.copy_log.appendPlainText("Copy finished.")
+            note = getattr(self.sender(), "archive_note", "")
+            if note:
+                self.copy_log.appendPlainText(note)
 
     def _copy_failed(self, message: str) -> None:
         self._busy = False
