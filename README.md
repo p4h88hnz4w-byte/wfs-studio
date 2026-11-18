@@ -1,6 +1,6 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.5.0. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.0. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves.
 
 `CHANGELOG.md` is the record of what has been built. `FUTURE.md` is what is still ahead. The short version:
 
@@ -8,7 +8,7 @@ WFS Studio is a desktop program for your own Wii U backups. Version 0.5.0. It is
 | --- | --- |
 | Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size. Back up `usr/save` in SaveMii's folder layout. Run `wfs-extract` on your own MLC or USB image. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
-| Next, when we pick it up | A byte bar on the Extract tab. A frozen app for Apple Silicon and for x86_64 Linux. The plan is in `FUTURE.md`. |
+| Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. An Apple Silicon `.app`, then an x86_64 Linux AppImage. The plan is in `FUTURE.md`. |
 
 ## Run
 
@@ -23,9 +23,9 @@ The first time, create the virtualenv as in Setup below.
 ## Titles tab
 
 1. Choose the extracted dump, a `usr/title` folder, or one title folder.
-2. Scan. Names come from `longname_*` in `meta/meta.xml`. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
+2. Scan. Names come from `longname_*` in `meta/meta.xml`. Each row shows that title's `meta/iconTex.tga` beside the name. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
 3. Download GameTDB, or choose a `wiiutdb.zip` you already have. The zip stays compressed in `cache/wiiutdb.zip`. The app reads `wiiutdb.xml` from inside it. A plain `cache/wiiutdb.txt` is used only when no zip is available. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`. Banner zip reads `<id>.png` from a cover archive you already have. Without one, disc pictures are saved under `cache/covers/` after a download. If there is no banner and no disc, the pane shows `meta/iconTex.tga` from that title. A disc that arrives later replaces the icon.
-4. Check the titles to copy and choose a destination.
+4. Check the titles, choose a destination, and press Transfer.
 
 Game data copy is on by default. Each title is written to `Title Name [00050000-lowid]/`, and `usr/save` is not included. The window then checks that the destination file count and byte total match the source. Turn the option off to keep the path relative to the scanned folder, for example `usr/title/00050000/101DF400/...`. Files that already exist at the destination with the same size are skipped. A different size is replaced.
 

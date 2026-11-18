@@ -1,4 +1,4 @@
-"""Local settings stored inside the repo cache, which is gitignored."""
+"""Local settings stored in the user data directory, under ``cache/``."""
 
 from __future__ import annotations
 

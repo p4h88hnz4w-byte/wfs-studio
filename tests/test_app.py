@@ -282,6 +282,18 @@ def _center_rgb(window: MainWindow) -> tuple[int, int, int]:
     return color.red(), color.green(), color.blue()
 
 
+def test_title_list_shows_the_dump_icon(tmp_path: Path, monkeypatch):
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("disc fetch")
+
+    monkeypatch.setattr("wfs_studio.app.fetch_png", fail_fetch)
+    _dump_with_icon(tmp_path, _icon_tga(255, 0, 0))
+    window = _select_scanned_title(tmp_path)
+    assert not window.table.item(0, 2).icon().isNull()
+    assert window.copy_button.text() == "Transfer"
+    window.close()
+
+
 def test_title_icon_shows_when_there_is_no_disc(tmp_path: Path, monkeypatch):
     def fail_fetch(*_args, **_kwargs):
         raise AssertionError("disc fetch")

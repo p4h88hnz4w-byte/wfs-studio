@@ -2,6 +2,14 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. 0.5.0 is the current release. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.0
+
+A first step toward the Wii Backup Manager list, and toward an app that can be frozen.
+
+- The title list shows `meta/iconTex.tga` beside each name. The large picture in the detail pane is unchanged: a GameTDB banner or disc when one exists, and the same icon when it does not.
+- The copy button is labeled Transfer.
+- A source checkout still keeps `cache/` and `vendor/` in the project directory. A frozen build will keep them in Application Support on a Mac and in `~/.local/share/wfs-studio` on Linux. `WFS_STUDIO_DATA` overrides that folder. No `.app` or AppImage has been built.
+
 ## 0.5.0
 
 The title's own icon when GameTDB has no picture.

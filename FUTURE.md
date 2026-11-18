@@ -40,9 +40,9 @@ The aarch64 PySide6 wheels moved up to a much newer glibc. That does not change 
 
 ### What the frozen app has to change in the code
 
-Today the program finds its files by walking up to `pyproject.toml`, then writes `cache/` and `vendor/` there. An AppImage and a `.app` are not a git checkout, and the AppImage filesystem is read-only. Packaging starts with that split:
+`locations.data_dir` is the split. A source checkout still writes `cache/` and `vendor/` next to the project. A frozen build writes them under Application Support on macOS and `~/.local/share/wfs-studio` on Linux. `WFS_STUDIO_DATA` overrides either place. `WFS_STUDIO_HOME` still chooses the checkout root used in development. The next packaging step is to build the Apple Silicon `.app` with that data directory, and to put the matching `wfs-extract` beside the app.
 
-- A user data directory for settings, the GameTDB zip, disc art, and the title size cache. On Linux that is under the home directory. On macOS it is Application Support. `WFS_STUDIO_HOME` already overrides the root, but one override cannot be both the read-only install and the writable cache.
+Still to do when the app is frozen:
 - `wfs-extract` for that platform shipped beside the app, with koolkdev's MIT `LICENSE`, still checked by the SHA-256 in `binaries.py`. The download can stay as a fallback when the bundled binary is absent.
 - Qt kept as shared libraries inside the bundle, not compiled into the executable. PySide6 is LGPL. The app must include Qt's license and must document how to replace those libraries. A one-file blob that hides the Qt libraries is the wrong shape.
 
@@ -53,7 +53,7 @@ Today the program finds its files by walking up to `pyproject.toml`, then writes
 - `HANDOFF.md`, `cache/`, or `.venv`.
 - `wfs-file-injector` and `wfs-reencryptor` as features. The official zip contains them. The app still does not run them.
 
-No `.app` and no AppImage have been produced. Building them is a later step, after the path split above.
+No `.app` and no AppImage have been produced. The data-directory split is in place, and the Apple Silicon `.app` is the next build.
 
 ## Still out of scope
 

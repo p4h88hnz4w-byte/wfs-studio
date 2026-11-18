@@ -11,8 +11,8 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, Qt, QProcess, QThread, Signal
-from PySide6.QtGui import QAction, QColor, QFontMetrics, QPalette, QPixmap
+from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, Signal
+from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -68,6 +68,7 @@ from wfs_studio.gametdb import (
     remember_cover_miss,
 )
 from wfs_studio.icon import title_icon_png
+from wfs_studio.locations import data_dir
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.saves import SaveRecord, backup_saves, scan_saves
 from wfs_studio.settings import load_settings, save_settings
@@ -292,13 +293,14 @@ class SizeItem(QTableWidgetItem):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, data: Path | None = None):
         super().__init__()
         self.root = root or repo_root()
-        self.settings = load_settings(self.root)
+        self.data = data if data is not None else data_dir(self.root)
+        self.settings = load_settings(self.data)
         self.records: list[TitleRecord] = []
         self.sizes: dict[str, int] = {}
-        self.database = load_database(self.root / "cache", self.settings.get("gametdb_zip"))
+        self.database = load_database(self.data / "cache", self.settings.get("gametdb_zip"))
         self._cover_index: dict[str, str] = {}
         self._index_cover_zip()
         self._cancel_sizes = threading.Event()
@@ -398,6 +400,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(DB_COL, QHeaderView.ResizeMode.Stretch)
         for column in (CHECK_COL, KIND_COL, REGION_COL, SIZE_COL):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setIconSize(QSize(32, 32))
+        self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.setSortingEnabled(True)
         body.addWidget(self.table)
 
@@ -450,7 +454,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.game_data_box)
 
         action_row = QHBoxLayout()
-        self.copy_button = QPushButton("Copy checked")
+        self.copy_button = QPushButton("Transfer")
         self.copy_button.setObjectName("primary")
         self.copy_button.clicked.connect(self._start_copy)
         self.cancel_copy_button = QPushButton("Stop")
@@ -798,7 +802,7 @@ class MainWindow(QMainWindow):
 
     def _persist(self) -> None:
         self.settings = self._collect_settings()
-        save_settings(self.root, self.settings)
+        save_settings(self.data, self.settings)
 
     def _image_type(self) -> str:
         if self.usb_radio.isChecked():
@@ -808,6 +812,8 @@ class MainWindow(QMainWindow):
         return "mlc"
 
     def _on_type_changed(self) -> None:
+        if not hasattr(self, "otp_edit"):
+            return
         image_type = self._image_type()
         self.otp_edit.setEnabled(image_type != "plain")
         self.seeprom_edit.setEnabled(image_type == "usb")
@@ -921,7 +927,7 @@ class MainWindow(QMainWindow):
         worker = SizeWorker(
             list(self.records),
             self._cancel_sizes,
-            cache_path=self.root / "cache" / "title-sizes.json",
+            cache_path=self.data / "cache" / "title-sizes.json",
             refresh=refresh,
         )
         worker.sized.connect(lambda payload, generation=generation: self._size_ready(payload, generation))
@@ -946,6 +952,9 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, KIND_COL, kind)
             name = QTableWidgetItem(record.name)
             name.setData(Qt.ItemDataRole.UserRole, str(record.path))
+            icon = self._list_icon(record)
+            if not icon.isNull():
+                name.setIcon(icon)
             self.table.setItem(row, NAME_COL, name)
             self.table.setItem(row, ID_COL, QTableWidgetItem(record.title_id))
             self.table.setItem(row, PRODUCT_COL, QTableWidgetItem(record.product_code))
@@ -958,6 +967,15 @@ class MainWindow(QMainWindow):
         self.table.setSortingEnabled(True)
         self._update_checked_label()
         self._apply_filter()
+
+    def _list_icon(self, record: TitleRecord) -> QIcon:
+        png = title_icon_png(record.path / "meta" / "iconTex.tga")
+        if not png:
+            return QIcon()
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(png):
+            return QIcon()
+        return QIcon(pixmap)
 
     def _record_for_row(self, row: int) -> TitleRecord | None:
         item = self.table.item(row, NAME_COL)
@@ -1091,7 +1109,7 @@ class MainWindow(QMainWindow):
             banner = self._banner_from_zip(record.gametdb_id)
             if banner is not None and self._show_cover(banner):
                 return
-            status, data = read_cover_cache(self.root / "cache", record.gametdb_id)
+            status, data = read_cover_cache(self.data / "cache", record.gametdb_id)
             if status == "hit" and isinstance(data, (bytes, bytearray)) and self._show_cover(data):
                 return
             if status != "miss":
@@ -1100,7 +1118,7 @@ class MainWindow(QMainWindow):
                 worker = CoverWorker(
                     generation,
                     disc_urls(record.gametdb_id, record.region),
-                    self.root / "cache",
+                    self.data / "cache",
                     record.gametdb_id,
                     self._cancel_covers,
                 )
@@ -1201,7 +1219,7 @@ class MainWindow(QMainWindow):
     def _download_db(self) -> None:
         self.db_button.setEnabled(False)
         self.statusBar().showMessage("Downloading GameTDB")
-        worker = FetchWorker(lambda: download_titles(self.root / "cache"))
+        worker = FetchWorker(lambda: download_titles(self.data / "cache"))
         worker.succeeded.connect(self._downloaded_db)
         worker.failed.connect(self._db_failed)
         self._track(worker)
@@ -1367,7 +1385,7 @@ class MainWindow(QMainWindow):
         self.copy_label.setText("Stopping after the current block")
 
     def _refresh_binary_label(self) -> None:
-        binary = installed_binary(self.root)
+        binary = installed_binary(self.data)
         if binary is None:
             self.binary_label.setText("wfs-extract is not downloaded yet.")
         else:
@@ -1376,7 +1394,7 @@ class MainWindow(QMainWindow):
     def _download_binary(self) -> None:
         self.binary_button.setEnabled(False)
         self.statusBar().showMessage("Downloading wfs-tools")
-        worker = FetchWorker(lambda: ensure_binary(self.root))
+        worker = FetchWorker(lambda: ensure_binary(self.data))
         worker.succeeded.connect(self._binary_ready)
         worker.failed.connect(self._binary_failed)
         self._track(worker)
@@ -1397,7 +1415,7 @@ class MainWindow(QMainWindow):
         self._warn(message)
 
     def _current_request(self) -> ExtractRequest | None:
-        binary = installed_binary(self.root)
+        binary = installed_binary(self.data)
         if binary is None:
             return None
         image_type = self._image_type()
@@ -1431,7 +1449,7 @@ class MainWindow(QMainWindow):
         if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:
             self._warn("An extract is already running.")
             return
-        binary = installed_binary(self.root)
+        binary = installed_binary(self.data)
         if binary is None:
             self._warn("Download wfs-extract first.")
             return
