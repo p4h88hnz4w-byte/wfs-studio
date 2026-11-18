@@ -423,6 +423,129 @@ def test_checking_every_title_offers_an_archive(tmp_path: Path, monkeypatch):
     window.close()
 
 
+def _title(root: Path, name: str, low: str) -> TitleRecord:
+    return TitleRecord(
+        source_root=root,
+        path=root / low,
+        high_id="00050000",
+        low_id=low,
+        kind="Game",
+        name=name,
+        product_code="",
+        region="USA",
+        version="",
+        publisher="",
+    )
+
+
+def test_ctrl_c_closes_without_the_quit_prompt(tmp_path: Path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window._busy = True
+    app._interrupt = True
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("Ctrl+C should close without asking")
+
+    monkeypatch.setattr("wfs_studio.app.QMessageBox.question", refuse)
+    window.close()
+    app.processEvents()
+    assert window._closing is True
+    app._interrupt = False
+
+
+def test_keyboard_interrupt_requests_one_clean_quit():
+    from wfs_studio.app import request_interrupt
+
+    class Fake:
+        def __init__(self) -> None:
+            self._interrupt = False
+            self.quit_called = 0
+
+        def quit(self) -> None:
+            self.quit_called += 1
+
+    app = Fake()
+    request_interrupt(app)
+    assert app._interrupt is True
+    assert app.quit_called == 1
+
+
+def test_notify_catches_ctrl_c():
+    import subprocess
+    import sys
+
+    script = """
+import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtCore import QEvent
+from PySide6.QtWidgets import QWidget
+from wfs_studio.app import WfsApplication
+
+app = WfsApplication([])
+
+class Boom(QWidget):
+    def event(self, event):
+        raise KeyboardInterrupt()
+
+assert app.notify(Boom(), QEvent(QEvent.Type.User)) is False
+assert app._interrupt is True
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
+    assert "Error calling Python override" not in result.stderr
+
+
+def test_edit_menu_select_all_follows_the_tab(tmp_path: Path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window.records = [_title(tmp_path, "Bayonetta", "10112200"), _title(tmp_path, "Other", "10113300")]
+    window._fill_table()
+    window.search_edit.setText("Bayonetta")
+    app.processEvents()
+    assert window.table.isRowHidden(1)
+    monkeypatch.setattr(
+        "wfs_studio.app.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    window.tabs.setCurrentIndex(0)
+    window.source_edit.setFocus()
+    window.select_all_action.trigger()
+    assert window.table.item(0, 0).checkState() == Qt.CheckState.Checked
+    assert window.table.item(1, 0).checkState() == Qt.CheckState.Checked
+    assert window._title_archive_declined is True
+
+    profile = tmp_path / "dump" / "usr" / "save" / "00050000" / "10112200" / "user" / "80000001"
+    profile.mkdir(parents=True)
+    (profile / "save.dat").write_bytes(b"abc")
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan_saves()
+    window.tabs.setCurrentIndex(1)
+    window.select_all_action.trigger()
+    assert len(window._checked_saves()) == 1
+    assert window._save_archive_declined is True
+
+    window.extract_log.setPlainText("alpha\nbeta")
+    window.tabs.setCurrentIndex(2)
+    window.input_edit.setFocus()
+    window.select_all_action.trigger()
+    cursor = window.extract_log.textCursor()
+    assert cursor.selectionStart() == 0
+    assert cursor.selectionEnd() == len("alpha\nbeta")
+    window.close()
+
+
 def test_copy_worker_archives_the_copied_title(tmp_path: Path):
     folder = tmp_path / "title"
     (folder / "meta").mkdir(parents=True)

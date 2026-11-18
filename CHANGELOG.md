@@ -2,6 +2,15 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.10
+
+Edit → Select all follows the tab in front.
+
+- Titles checks every title, including rows hidden by the filter, and asks about an archive. Check visible still checks only the rows on screen. The Titles tab also has a Select all button.
+- Saves checks every save, the same as the Select all button, and asks about an archive.
+- Extract selects the whole log. A text field keeps its own Select all key.
+- Ctrl+C in the terminal closes the window. Settings are saved and a running copy or extract is stopped. A second Ctrl+C stops the process immediately. The crash log does not record this.
+
 ## 0.6.9
 
 Checking every title offers an archive, using the same system archiver as saves.

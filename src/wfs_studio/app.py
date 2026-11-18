@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import queue
+import signal
 import sys
 import threading
 import time
@@ -12,8 +13,8 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, Signal
-from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QPalette, QPixmap
+from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QKeySequence, QPalette, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -416,11 +417,11 @@ class MainWindow(QMainWindow):
         version.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         shell_layout.addWidget(version, 0, Qt.AlignmentFlag.AlignRight)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_titles_tab(), "Titles")
-        tabs.addTab(self._build_saves_tab(), "Saves")
-        tabs.addTab(self._build_extract_tab(), "Extract")
-        shell_layout.addWidget(tabs, 1)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_titles_tab(), "Titles")
+        self.tabs.addTab(self._build_saves_tab(), "Saves")
+        self.tabs.addTab(self._build_extract_tab(), "Extract")
+        shell_layout.addWidget(self.tabs, 1)
         self.setCentralWidget(shell)
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Ready")
@@ -429,6 +430,13 @@ class MainWindow(QMainWindow):
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+        edit_menu = self.menuBar().addMenu("Edit")
+        self.select_all_action = QAction("Select all", self)
+        self.select_all_action.triggered.connect(self._select_all_on_tab)
+        edit_menu.addAction(self.select_all_action)
+        self._bind_select_all(self.table, self._select_all_titles)
+        self._bind_select_all(self.save_table, self._select_all_saves)
 
         help_menu = self.menuBar().addMenu("Help")
         about_action = QAction("About WFS Studio", self)
@@ -510,6 +518,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(body, 1)
 
         check_row = QHBoxLayout()
+        select_all_button = QPushButton("Select all")
+        select_all_button.clicked.connect(self._select_all_titles)
         all_button = QPushButton("Check visible")
         all_button.clicked.connect(lambda: self._set_visible_checks(True))
         none_button = QPushButton("Uncheck visible")
@@ -517,6 +527,7 @@ class MainWindow(QMainWindow):
         self.checked_label = QLabel("0 checked")
         self.recount_button = QPushButton("Recount sizes")
         self.recount_button.clicked.connect(self._recount_sizes)
+        check_row.addWidget(select_all_button)
         check_row.addWidget(all_button)
         check_row.addWidget(none_button)
         check_row.addWidget(self.checked_label)
@@ -1194,6 +1205,42 @@ class MainWindow(QMainWindow):
                 values.append(item.text().lower() if item is not None else "")
             self.table.setRowHidden(row, not any(query in value for value in values))
 
+    def _bind_select_all(self, widget: QWidget, handler) -> None:
+        shortcut = QShortcut(QKeySequence.StandardKey.SelectAll, widget)
+        shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        shortcut.activated.connect(handler)
+
+    def _select_all_on_tab(self) -> None:
+        """Edit → Select all for the tab in front.
+
+        Titles checks every title, including rows hidden by the filter.
+        Saves checks every save. Extract selects the whole log. A text field
+        keeps its own Select all key.
+        """
+        page = self.tabs.currentIndex()
+        if page == 0:
+            self._select_all_titles()
+        elif page == 1:
+            self._select_all_saves()
+        else:
+            self.extract_log.selectAll()
+            self.extract_log.setFocus()
+
+    def _select_all_titles(self) -> None:
+        if not self.records:
+            self._warn("Scan a source folder first.")
+            return
+        self._title_archive = None
+        self._title_archive_declined = False
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, CHECK_COL)
+            if item is not None:
+                item.setCheckState(Qt.CheckState.Checked)
+        self.table.blockSignals(False)
+        self._update_checked_label()
+        self._offer_title_archive()
+
     def _set_visible_checks(self, checked: bool) -> None:
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
         self.table.blockSignals(True)
@@ -1828,7 +1875,8 @@ class MainWindow(QMainWindow):
         extracting = (
             self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning
         )
-        if copying or extracting:
+        interrupted = bool(getattr(QApplication.instance(), "_interrupt", False))
+        if (copying or extracting) and not interrupted:
             answer = QMessageBox.question(
                 self,
                 "Quit",
@@ -2034,12 +2082,31 @@ def apply_theme(app: QApplication) -> None:
 
 
 class WfsApplication(QApplication):
+    def __init__(self, argv: list[str]) -> None:
+        super().__init__(argv)
+        self._interrupt = False
+
     def notify(self, receiver, event):
         try:
             return super().notify(receiver, event)
+        except KeyboardInterrupt:
+            # Ctrl+C in the terminal arrives here. Leaving it uncaught makes
+            # Qt print "Error calling Python override of QApplication::notify".
+            request_interrupt(self)
+            return False
         except Exception:
             log_failure("Unhandled error in the window")
             return False
+
+
+def request_interrupt(app) -> None:
+    """Ask the window to close. A second Ctrl+C stops the process immediately."""
+    if getattr(app, "_interrupt", False):
+        os._exit(130)
+    app._interrupt = True
+    quit_app = getattr(app, "quit", None)
+    if quit_app is not None:
+        quit_app()
 
 
 def main() -> None:
@@ -2051,4 +2118,18 @@ def main() -> None:
     apply_theme(app)
     window = MainWindow()
     window.show()
-    raise SystemExit(app.exec())
+
+    def _on_sigint(_signum, _frame) -> None:
+        request_interrupt(app)
+
+    signal.signal(signal.SIGINT, _on_sigint)
+    # The Qt loop waits in C. This timer returns to Python so Ctrl+C is seen.
+    wake = QTimer()
+    wake.start(200)
+    wake.timeout.connect(lambda: None)
+    try:
+        code = app.exec()
+    except KeyboardInterrupt:
+        request_interrupt(app)
+        code = 130
+    raise SystemExit(130 if app._interrupt else code)
