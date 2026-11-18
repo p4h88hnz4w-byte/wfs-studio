@@ -345,11 +345,21 @@ class MainWindow(QMainWindow):
         self._refresh_command()
 
     def _build(self) -> None:
+        shell = QWidget()
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        version = QLabel(f"v{__version__}")
+        version.setObjectName("version")
+        version.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        shell_layout.addWidget(version, 0, Qt.AlignmentFlag.AlignRight)
+
         tabs = QTabWidget()
         tabs.addTab(self._build_titles_tab(), "Titles")
         tabs.addTab(self._build_saves_tab(), "Saves")
         tabs.addTab(self._build_extract_tab(), "Extract")
-        self.setCentralWidget(tabs)
+        shell_layout.addWidget(tabs, 1)
+        self.setCentralWidget(shell)
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Ready")
 
@@ -1707,6 +1717,7 @@ def apply_theme(app: QApplication) -> None:
         """
         QMainWindow, QDialog, QMessageBox { background: #f2f5f6; color: #2c3336; }
         QWidget { color: #2c3336; }
+        QLabel#version { color: #5c676c; background: transparent; padding: 6px 14px 0 0; }
         QMenuBar { background: #ffffff; color: #2c3336; border-bottom: 1px solid #d5dcdf; }
         QMenuBar::item { padding: 4px 10px; background: transparent; }
         QMenuBar::item:selected { background: #e5f6fb; color: #009ac7; }

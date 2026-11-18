@@ -12,8 +12,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
 
+from wfs_studio import __version__
 from wfs_studio.app import CoverWorker, MainWindow, SizeItem, SizeWorker, apply_theme
 from wfs_studio.copy_job import CopyProgress
 from wfs_studio.gametdb import parse_titles, remember_cover, remember_cover_miss
@@ -372,3 +373,17 @@ def test_theme_uses_the_wii_u_menu_colors():
     assert "#e6ebed" in sheet
     assert "#1f7a6d" not in sheet
     assert "#1b1e22" not in sheet
+
+
+def test_version_sits_in_the_top_right(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    apply_theme(app)
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    label = window.findChild(QLabel, "version")
+    assert label is not None
+    assert label.text() == f"v{__version__}"
+    assert label.y() < 40
+    assert label.x() > window.width() / 2
+    window.close()
