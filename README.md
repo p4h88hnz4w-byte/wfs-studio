@@ -1,6 +1,6 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.6.0. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.6.1. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue.
 
 `CHANGELOG.md` is the record of what has been built. `FUTURE.md` is what is still ahead. The short version:
 

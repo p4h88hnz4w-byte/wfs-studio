@@ -408,9 +408,9 @@ class MainWindow(QMainWindow):
         detail = QWidget()
         detail_layout = QVBoxLayout(detail)
         self.cover_label = QLabel("No disc image")
+        self.cover_label.setObjectName("cover")
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cover_label.setFixedSize(180, 180)
-        self.cover_label.setFrameShape(QFrame.Shape.StyledPanel)
         detail_layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignHCenter)
         self.detail_label = QLabel("Scan a source folder to list titles.")
         self.detail_label.setWordWrap(True)
@@ -1648,34 +1648,157 @@ class MainWindow(QMainWindow):
 
 
 def apply_theme(app: QApplication) -> None:
+    """White menu, soft gray panels, and the Wii U blue accent.
+
+    The blue is the logo color, ``#009AC7``. It is reserved for the selected
+    tab, primary buttons, progress, and focus. Body text stays a soft dark
+    gray so the window reads as the system menu rather than a blue page.
+    """
     app.setStyle("Fusion")
+    white = QColor("#ffffff")
+    desk = QColor("#f2f5f6")
+    panel = QColor("#e6ebed")
+    ink = QColor("#2c3336")
+    muted = QColor("#5c676c")
+    blue = QColor("#009ac7")
+    wash = QColor("#d7f1f8")
     palette = QPalette()
-    base = QColor("#1b1e22")
-    panel = QColor("#24282e")
-    text = QColor("#e7e9ee")
-    muted = QColor("#a3aab4")
-    accent = QColor("#1f7a6d")
-    palette.setColor(QPalette.ColorRole.Window, base)
-    palette.setColor(QPalette.ColorRole.WindowText, text)
-    palette.setColor(QPalette.ColorRole.Base, QColor("#14171a"))
-    palette.setColor(QPalette.ColorRole.AlternateBase, panel)
-    palette.setColor(QPalette.ColorRole.Text, text)
-    palette.setColor(QPalette.ColorRole.Button, panel)
-    palette.setColor(QPalette.ColorRole.ButtonText, text)
-    palette.setColor(QPalette.ColorRole.Highlight, accent)
-    palette.setColor(QPalette.ColorRole.HighlightedText, text)
-    palette.setColor(QPalette.ColorRole.PlaceholderText, muted)
-    palette.setColor(QPalette.ColorRole.ToolTipBase, panel)
-    palette.setColor(QPalette.ColorRole.ToolTipText, text)
+    palette.setColor(QPalette.ColorRole.Window, desk)
+    palette.setColor(QPalette.ColorRole.WindowText, ink)
+    palette.setColor(QPalette.ColorRole.Base, white)
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#f4f8f9"))
+    palette.setColor(QPalette.ColorRole.Text, ink)
+    palette.setColor(QPalette.ColorRole.Button, white)
+    palette.setColor(QPalette.ColorRole.ButtonText, ink)
+    palette.setColor(QPalette.ColorRole.Light, panel)
+    palette.setColor(QPalette.ColorRole.Midlight, desk)
+    palette.setColor(QPalette.ColorRole.Highlight, wash)
+    palette.setColor(QPalette.ColorRole.HighlightedText, ink)
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#8c8c8c"))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, white)
+    palette.setColor(QPalette.ColorRole.ToolTipText, ink)
+    palette.setColor(QPalette.ColorRole.Link, blue)
+    disabled = QPalette.ColorGroup.Disabled
+    palette.setColor(disabled, QPalette.ColorRole.Text, muted)
+    palette.setColor(disabled, QPalette.ColorRole.WindowText, muted)
+    palette.setColor(disabled, QPalette.ColorRole.ButtonText, QColor("#8c8c8c"))
     app.setPalette(palette)
     app.setStyleSheet(
         """
-        QPushButton { padding: 6px 12px; border-radius: 6px; border: 1px solid #3c444e; }
-        QPushButton#primary { background: #1f7a6d; border-color: #2f9e8f; }
-        QLineEdit, QPlainTextEdit { border: 1px solid #343a42; border-radius: 6px; padding: 4px; }
-        QProgressBar { border: 1px solid #343a42; border-radius: 4px; text-align: center; }
-        QProgressBar::chunk { background: #2f9e8f; }
-        QHeaderView::section { background: #24282e; padding: 4px; border: 0; }
+        QMainWindow, QDialog, QMessageBox { background: #f2f5f6; color: #2c3336; }
+        QWidget { color: #2c3336; }
+        QMenuBar { background: #ffffff; color: #2c3336; border-bottom: 1px solid #d5dcdf; }
+        QMenuBar::item { padding: 4px 10px; background: transparent; }
+        QMenuBar::item:selected { background: #e5f6fb; color: #009ac7; }
+        QMenu { background: #ffffff; color: #2c3336; border: 1px solid #d5dcdf; }
+        QMenu::item { padding: 6px 18px; }
+        QMenu::item:selected { background: #e5f6fb; color: #2c3336; }
+        QStatusBar {
+            background: #ffffff;
+            color: #5c676c;
+            border-top: 1px solid #d5dcdf;
+        }
+        QTabWidget::pane {
+            background: #ffffff;
+            border: 1px solid #d5dcdf;
+            border-radius: 10px;
+            top: 1px;
+        }
+        QTabBar::tab {
+            background: #e6ebed;
+            color: #5c676c;
+            border: 1px solid #d5dcdf;
+            border-bottom: 3px solid transparent;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            padding: 8px 18px;
+            margin-right: 4px;
+        }
+        QTabBar::tab:selected {
+            background: #ffffff;
+            color: #009ac7;
+            border-bottom: 3px solid #009ac7;
+            font-weight: 600;
+        }
+        QTabBar::tab:hover { color: #007ea6; }
+        QPushButton {
+            background: #ffffff;
+            color: #2c3336;
+            border: 1px solid #d0d8dc;
+            border-radius: 10px;
+            padding: 7px 16px;
+        }
+        QPushButton:hover { border-color: #009ac7; color: #007ea6; }
+        QPushButton:pressed { background: #e5f6fb; }
+        QPushButton:disabled { color: #8c8c8c; background: #f4f7f8; border-color: #e0e6e8; }
+        QPushButton#primary {
+            background: #009ac7;
+            color: #ffffff;
+            border: 1px solid #009ac7;
+        }
+        QPushButton#primary:hover { background: #00aad4; border-color: #00aad4; color: #ffffff; }
+        QPushButton#primary:pressed { background: #007ea6; border-color: #007ea6; color: #ffffff; }
+        QPushButton#primary:disabled { background: #b7dfe9; color: #f7fbfc; border-color: #b7dfe9; }
+        QLineEdit, QPlainTextEdit {
+            background: #ffffff;
+            color: #2c3336;
+            border: 1px solid #d0d8dc;
+            border-radius: 8px;
+            padding: 5px 8px;
+            selection-background-color: #009ac7;
+            selection-color: #ffffff;
+        }
+        QLineEdit:focus, QPlainTextEdit:focus { border: 1px solid #009ac7; }
+        QTableWidget {
+            background: #ffffff;
+            alternate-background-color: #f4f8f9;
+            color: #2c3336;
+            gridline-color: #e6eef1;
+            border: 1px solid #d5dcdf;
+            border-radius: 8px;
+            selection-background-color: #d7f1f8;
+            selection-color: #2c3336;
+        }
+        QTableWidget::item:selected { background: #d7f1f8; color: #2c3336; }
+        QHeaderView::section {
+            background: #f4f7f8;
+            color: #5c676c;
+            padding: 6px;
+            border: 0;
+            border-bottom: 1px solid #d5dcdf;
+        }
+        QProgressBar {
+            background: #e6ebed;
+            color: #2c3336;
+            border: 0;
+            border-radius: 9px;
+            min-height: 18px;
+            max-height: 18px;
+            text-align: center;
+        }
+        QProgressBar::chunk {
+            background: #009ac7;
+            border-radius: 8px;
+            margin: 1px;
+        }
+        QLabel#cover {
+            background: #ffffff;
+            color: #8c8c8c;
+            border: 1px solid #d5dcdf;
+            border-radius: 16px;
+        }
+        QCheckBox, QRadioButton { spacing: 6px; }
+        QScrollBar:vertical, QScrollBar:horizontal { background: #f2f5f6; border: 0; }
+        QScrollBar:vertical { width: 12px; }
+        QScrollBar:horizontal { height: 12px; }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background: #c5d0d4;
+            border-radius: 4px;
+        }
+        QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #009ac7; }
+        QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+        QSplitter::handle { background: #f2f5f6; }
+        QToolTip { background: #ffffff; color: #2c3336; border: 1px solid #009ac7; }
         """
     )
 

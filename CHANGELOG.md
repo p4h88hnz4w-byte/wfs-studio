@@ -1,6 +1,14 @@
 # Changelog
 
-Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. 0.5.0 is the current release. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
+Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
+
+## 0.6.1
+
+The window follows the Wii U menu: white surfaces, soft gray panels, and the logo blue `#009AC7`.
+
+- The desk is a soft gray. Pages, fields, and the title list are white. Inactive tabs use that same soft gray.
+- The blue is reserved for the selected tab and its underline, the main buttons, the progress bar, and focus. A selected row is a pale blue wash so the title icon stays readable.
+- Body text is a dark gray. The window is not a blue page. No `.app` or AppImage has been built.
 
 ## 0.6.0
 

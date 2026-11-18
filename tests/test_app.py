@@ -14,7 +14,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from wfs_studio.app import CoverWorker, MainWindow, SizeItem, SizeWorker
+from wfs_studio.app import CoverWorker, MainWindow, SizeItem, SizeWorker, apply_theme
 from wfs_studio.copy_job import CopyProgress
 from wfs_studio.gametdb import parse_titles, remember_cover, remember_cover_miss
 from wfs_studio.icon import rgba_png
@@ -361,3 +361,14 @@ def test_a_missed_disc_keeps_the_title_icon(tmp_path: Path, monkeypatch):
     assert _center_rgb(window) == (0, 0, 255)
     assert (cache / "covers" / "AAFE01.missing").is_file()
     window.close()
+
+
+def test_theme_uses_the_wii_u_menu_colors():
+    app = QApplication.instance() or QApplication([])
+    apply_theme(app)
+    sheet = app.styleSheet()
+    assert "#009ac7" in sheet
+    assert "#ffffff" in sheet
+    assert "#e6ebed" in sheet
+    assert "#1f7a6d" not in sheet
+    assert "#1b1e22" not in sheet
