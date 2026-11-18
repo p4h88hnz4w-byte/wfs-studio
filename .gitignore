@@ -10,8 +10,9 @@ dist/
 build/
 *.egg-info/
 
-# Local handoff. Names the owner's backup path. Do not publish.
+# Local notes. HANDOFF names the owner's backup path. FUTURE is the private plan.
 HANDOFF.md
+FUTURE.md
 *.workflow.json
 
 # Console keys and NAND images must never be committed.
