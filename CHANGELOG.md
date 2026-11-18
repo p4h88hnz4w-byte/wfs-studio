@@ -8,6 +8,7 @@ The window plays menu music.
 
 - The track is 8bit Bossa by Joth, CC0, from <https://opengameart.org/content/bossa-nova>. It is an Opus file encoded at 64 kbps. The ending is crossfaded into the opening, and the window loops it.
 - File → Menu music turns the music off. That choice is remembered. Closing the window stops playback.
+- The introduction now says the program is for Mac and Linux, inspired by Wii Backup Manager, and that copying a dump is the way into a backup or into Cemu.
 
 ## 0.7.2
 
