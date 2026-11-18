@@ -2,24 +2,20 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.4
+
+The Linux window opens, and closing no longer waits on the menu player.
+
+- `QMediaPlayer.stop()` let the process sit for more than 20 seconds after the window closed. The track is cleared instead, and the process exits with the window. The FFmpeg file banner and the Opus timestamp note are not printed in the terminal.
+- Menu music was starting while the window was being built. On Linux the PipeWire audio backend then waits forever, including from the window's event handler. Linux uses the PulseAudio backend instead. The track starts once the event loop is running, and the window is shown after that.
+
 ## 0.7.3
 
 The window plays menu music.
 
 - The track is 8bit Bossa by Joth, CC0, from <https://opengameart.org/content/bossa-nova>. It is an Opus file encoded at 64 kbps. The ending is crossfaded into the opening, and the window loops it.
 - File → Menu music turns the music off. That choice is remembered. Closing the window stops playback.
-- The introduction now says the program is for Mac and Linux, inspired by Wii Backup Manager, and that copying a dump is the way into a backup or into Cemu.
-
-Hot fix 2. Closing the window no longer waits on the menu player.
-
-- `QMediaPlayer.stop()` let the process sit for more than 20 seconds after the window closed. The track is cleared instead, and the process exits with the window.
-- The FFmpeg file banner and the Opus timestamp note are not printed in the terminal.
-
-Hot fix 3. The opening paragraph is the program description: inspired by Wii Backup Manager, for Mac and Linux, a Python window around official wfs-tools v1.2.3 wfs-extract, intended for copying a Wii U hard drive into a backup or into folders Cemu can open.
-
-Hot fix 4. The window opens on Linux again.
-
-- Menu music was starting while the window was being built. On Linux the PipeWire audio backend then waits forever, including from the window's event handler. Linux uses the PulseAudio backend instead, the track starts once the event loop is running, and the window is shown after that.
+- The opening paragraph is the program description: inspired by Wii Backup Manager, for Mac and Linux, a Python window around official wfs-tools v1.2.3 wfs-extract, intended for copying a Wii U hard drive into a backup or into folders Cemu can open.
 
 ## 0.7.2
 
