@@ -411,8 +411,6 @@ class MainWindow(QMainWindow):
         self._refresh_db_label()
         self._refresh_command()
         self.menu_music_action.toggled.connect(self._on_menu_music)
-        if self.menu_music_action.isChecked():
-            self._start_menu_music()
 
     def _build(self) -> None:
         shell = QWidget()
@@ -2199,6 +2197,10 @@ def main() -> None:
     apply_theme(app)
     window = MainWindow()
     window.show()
+    # PipeWire does not answer until the Qt event loop is running. Starting
+    # the menu player while the window is still being built never returns
+    # on Linux, so the alias appears to hang.
+    QTimer.singleShot(0, window._start_menu_music)
 
     def _on_sigint(_signum, _frame) -> None:
         request_interrupt(app)

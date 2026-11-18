@@ -17,6 +17,10 @@ Hot fix 2. Closing the window no longer waits on the menu player.
 
 Hot fix 3. The opening paragraph is the program description: inspired by Wii Backup Manager, for Mac and Linux, a Python window around official wfs-tools v1.2.3 wfs-extract, intended for copying a Wii U hard drive into a backup or into folders Cemu can open.
 
+Hot fix 4. The window opens on Linux again.
+
+- Menu music was starting while the window was still being built. On PipeWire that call never returned, so the alias sat there. The track now starts after the window is up.
+
 ## 0.7.2
 
 The Linux installer no longer downloads vcpkg.
