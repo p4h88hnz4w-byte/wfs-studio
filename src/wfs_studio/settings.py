@@ -21,6 +21,7 @@ DEFAULTS = {
     "game_data_copy": True,
     "save_dest": "",
     "save_usb": False,
+    "menu_music": True,
 }
 
 

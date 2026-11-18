@@ -1,6 +1,6 @@
 [project]
 name = "wfs-studio"
-version = "0.7.2"
+version = "0.7.3"
 description = "Desktop GUI for browsing Wii U title dumps and running wfs-extract."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+wfs_studio = ["assets/*.opus"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -39,6 +39,7 @@ app:
 		--distpath $(DIST) \
 		--workpath build/pyinstaller \
 		--specpath build \
+		--add-data "src/wfs_studio/assets/menu.opus:." \
 		src/wfs_studio/__main__.py
 	mkdir -p "$(APP)/Contents/Resources/licenses"
 	cp LICENSE "$(APP)/Contents/Resources/licenses/LICENSE"

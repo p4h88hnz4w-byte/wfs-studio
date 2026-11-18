@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.3
+
+The window plays menu music.
+
+- The track is 8bit Bossa by Joth, CC0, from <https://opengameart.org/content/bossa-nova>. It is an Opus file encoded at 64 kbps. The ending is crossfaded into the opening, and the window loops it.
+- File → Menu music turns the music off. That choice is remembered. Closing the window stops playback.
+
 ## 0.7.2
 
 The Linux installer no longer downloads vcpkg.

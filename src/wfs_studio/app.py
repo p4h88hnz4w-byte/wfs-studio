@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, QTimer, Signal
+from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QKeySequence, QPalette, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -80,6 +80,7 @@ from wfs_studio.gametdb import (
 )
 from wfs_studio.icon import title_icon_png
 from wfs_studio.locations import data_dir, license_dir
+from wfs_studio.music import MENU_CREDIT, MENU_VOLUME, menu_track
 from wfs_studio.paths import PathIssue, output_is_nonempty, validate_copy, validate_extract_paths
 from wfs_studio.saves import (
     SaveRecord,
@@ -399,6 +400,8 @@ class MainWindow(QMainWindow):
         self._title_archive: Path | None = None
         self._title_archive_declined = False
         self._workers: list[QThread] = []
+        self._player = None
+        self._audio = None
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
         self._build()
@@ -406,6 +409,9 @@ class MainWindow(QMainWindow):
         self._refresh_binary_label()
         self._refresh_db_label()
         self._refresh_command()
+        self.menu_music_action.toggled.connect(self._on_menu_music)
+        if self.menu_music_action.isChecked():
+            self._start_menu_music()
 
     def _build(self) -> None:
         shell = QWidget()
@@ -427,6 +433,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
         file_menu = self.menuBar().addMenu("File")
+        self.menu_music_action = QAction("Menu music", self)
+        self.menu_music_action.setCheckable(True)
+        file_menu.addAction(self.menu_music_action)
+        file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
@@ -948,6 +958,7 @@ class MainWindow(QMainWindow):
         self.recovery_box.setChecked(bool(self.settings["dump_usr_dir"]))
         self.save_dest_edit.setText(self.settings["save_dest"])
         self.save_usb_box.setChecked(bool(self.settings["save_usb"]))
+        self.menu_music_action.setChecked(bool(self.settings.get("menu_music", True)))
         kind = self.settings["extract_type"]
         {"usb": self.usb_radio, "mlc": self.mlc_radio, "plain": self.plain_radio}.get(
             kind, self.mlc_radio
@@ -971,6 +982,7 @@ class MainWindow(QMainWindow):
             "dump_usr_dir": self.recovery_box.isChecked(),
             "gametdb_zip": self.settings.get("gametdb_zip", ""),
             "cover_zip": self.settings.get("cover_zip", ""),
+            "menu_music": self.menu_music_action.isChecked(),
         }
 
     def _persist(self) -> None:
@@ -1849,10 +1861,8 @@ class MainWindow(QMainWindow):
     def _warn(self, message: str) -> None:
         QMessageBox.warning(self, "WFS Studio", message)
 
-    def _about(self) -> None:
-        QMessageBox.information(
-            self,
-            "About WFS Studio",
+    def _about_text(self) -> str:
+        return (
             "WFS Studio " + __version__ + "\n\n"
             "A GUI for your own Wii U WFS dumps. Title names come from meta.xml. "
             "GameTDB (https://www.gametdb.com/) is a second lookup. "
@@ -1864,8 +1874,56 @@ class MainWindow(QMainWindow):
             "The window toolkit is PySide6, which is Qt, under the LGPL. "
             "WFS Studio's own source stays MIT. License files: " + str(license_dir(self.root)) + "\n\n"
             "otp.bin and seeprom.bin stay on your machine. This program does not upload them.\n\n"
-            "Crash log: " + str(log_path(self.data)),
+            "Crash log: " + str(log_path(self.data)) + "\n\n"
+            + MENU_CREDIT
         )
+
+    def _about(self) -> None:
+        QMessageBox.information(self, "About WFS Studio", self._about_text())
+
+    def _on_menu_music(self, checked: bool) -> None:
+        if checked:
+            self._start_menu_music()
+        else:
+            self._stop_menu_music()
+
+    def _start_menu_music(self) -> None:
+        """Play the menu track from the start of a loop. Offscreen tests stay quiet."""
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            return
+        if not self.menu_music_action.isChecked():
+            return
+        if self._player is not None:
+            self._player.play()
+            return
+        path = menu_track()
+        if path is None:
+            return
+        try:
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        except ImportError:
+            return
+        audio = QAudioOutput(self)
+        audio.setVolume(MENU_VOLUME)
+        player = QMediaPlayer(self)
+        player.setAudioOutput(audio)
+        player.setSource(QUrl.fromLocalFile(str(path)))
+        player.setLoops(QMediaPlayer.Loops.Infinite)
+        player.errorOccurred.connect(self._on_menu_music_error)
+        self._audio = audio
+        self._player = player
+        player.play()
+
+    def _on_menu_music_error(self, error, _message: str = "") -> None:
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        if error == QMediaPlayer.Error.NoError:
+            return
+        self._stop_menu_music()
+
+    def _stop_menu_music(self) -> None:
+        if self._player is not None:
+            self._player.stop()
 
     def closeEvent(self, event) -> None:
         if self._closing:
@@ -1886,6 +1944,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._closing = True
+        self._stop_menu_music()
         self._cancel_copy.set()
         self._cancel_saves.set()
         self._cancel_sizes.set()

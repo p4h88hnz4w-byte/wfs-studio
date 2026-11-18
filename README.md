@@ -1,12 +1,12 @@
 # WFS Studio
 
-WFS Studio is a desktop program for your own Wii U backups. Version 0.7.2. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
+WFS Studio is a desktop program for your own Wii U backups. Version 0.7.3. It is a PySide6 window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 `wfs-extract`, plus a copier for extracted titles and saves. The window is white, soft gray, and the Wii U blue, and the version sits in the top-right corner.
 
 `CHANGELOG.md` is the record of what has been built. The short version:
 
 | | |
 | --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Edit → Select all checks every title or save, or selects the extract log. Ctrl+C in the terminal closes the window. Linux can install from `install-linux.sh`, which asks for a working directory, an alias, and bash or zsh. Write a crash traceback to `cache/wfs-studio.log`. |
+| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Edit → Select all checks every title or save, or selects the extract log. Ctrl+C in the terminal closes the window. Linux can install from `install-linux.sh`, which asks for a working directory, an alias, and bash or zsh. The window loops menu music (8bit Bossa by Joth, CC0). File → Menu music turns it off. Write a crash traceback to `cache/wfs-studio.log`. |
 | Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
 | Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. |
 
@@ -161,5 +161,6 @@ Other material stays under its own terms and is not relicensed by this MIT grant
 - The official wfs-tools release zips are downloaded when you run the app and kept in `vendor/` on your machine.
 - The [GameTDB](https://www.gametdb.com/) title list and artwork are downloaded when you click Download GameTDB and kept in `cache/` on your machine. They remain GameTDB’s database. GameTDB does not host game dumps.
 - Save backups follow the folder layout of [SaveMii](https://github.com/w3irDv/savemii). SaveMii’s source is not part of this program.
+- Menu music is [8bit Bossa](https://opengameart.org/content/bossa-nova) by Joth, dedicated to the public domain under CC0. The app ships an Opus encode of that track. The original MP3 is not included.
 - PySide6 is the window toolkit. It is Qt, available under the LGPL. A source checkout installs it with pip. A frozen build keeps those Qt libraries replaceable and copies `packaging/licenses/` into the app. WFS Studio’s own source stays MIT.
 - NAND images, extracted titles, `otp.bin`, and `seeprom.bin` stay on the console owner’s computer. The app only receives the paths you choose.
