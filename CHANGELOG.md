@@ -2,6 +2,12 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.1
+
+The Linux installer accepts an alias that contains a hyphen.
+
+- The default alias is `wfs-studio`. The name check was rejecting that default. A hyphen is allowed. A space is still rejected.
+
 ## 0.7.0
 
 A Linux installer asks where to put the program, what to call it, and which shell to update.

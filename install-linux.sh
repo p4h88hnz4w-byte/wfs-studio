@@ -71,7 +71,7 @@ work="$(cd "$answer" && pwd)"
 
 ask "Alias" "wfs-studio" "${WFS_INSTALL_ALIAS:-}"
 alias_name="$answer"
-if [[ ! "$alias_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+if [[ ! "$alias_name" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
   echo "The alias must be a shell name, such as wfs-studio." >&2
   exit 1
 fi

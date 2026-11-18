@@ -49,10 +49,10 @@ def test_installer_writes_the_alias_into_the_chosen_shell(tmp_path: Path):
     work = tmp_path / "work"
     home.mkdir()
     _checkout(work)
-    zsh = _run(home, work, "zsh")
+    zsh = _run(home, work, "zsh", alias="wfs-studio")
     assert zsh.returncode == 0, zsh.stderr
     rc = (home / ".zshrc").read_text(encoding="utf-8")
-    assert "alias wfsu=" in rc
+    assert "alias wfs-studio=" in rc
     assert str(work) in rc
     assert ".venv/bin/python" in rc
     assert "-m wfs_studio" in rc
