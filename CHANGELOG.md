@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.6.4
+
+Save scan accepts the folder you actually picked.
+
+- The Titles source can be the dump, `usr/save`, `usr/save/00050000`, or one title folder. `usr/save/system` is still skipped.
+- The extract form connects the image-type buttons after the `otp.bin` field exists, so opening the window does not crash on that field.
+
 ## 0.6.3
 
 A crash writes a traceback to the user data folder.

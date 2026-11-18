@@ -588,8 +588,10 @@ class MainWindow(QMainWindow):
             if record.has_common:
                 profiles = f"{profiles}, common" if profiles else "common"
             self.save_table.setItem(row, 3, QTableWidgetItem(profiles or "none"))
-        self.save_label.setText(f"{len(self.save_records)} saves")
-        self.statusBar().showMessage(f"{len(self.save_records)} saves")
+        count = len(self.save_records)
+        message = f"{count} saves" if count else f"No saves in {source}"
+        self.save_label.setText(message)
+        self.statusBar().showMessage(message)
 
     def _checked_saves(self) -> list[SaveRecord]:
         chosen: list[SaveRecord] = []
@@ -705,8 +707,6 @@ class MainWindow(QMainWindow):
         for radio in (self.usb_radio, self.mlc_radio, self.plain_radio):
             self.type_group.addButton(radio)
             type_row.addWidget(radio)
-            radio.toggled.connect(self._on_type_changed)
-        self.mlc_radio.setChecked(True)
         type_row.addStretch(1)
         form.addRow("Type", type_row)
 
@@ -719,6 +719,9 @@ class MainWindow(QMainWindow):
         self.seeprom_edit.setPlaceholderText("seeprom.bin, required for USB")
         self.seeprom_edit.textChanged.connect(self._refresh_command)
         form.addRow("seeprom.bin", self._path_row(self.seeprom_edit, self._browse_seeprom, file_mode=True))
+        for radio in (self.usb_radio, self.mlc_radio, self.plain_radio):
+            radio.toggled.connect(self._on_type_changed)
+        self.mlc_radio.setChecked(True)
 
         self.output_edit = QLineEdit()
         self.output_edit.setPlaceholderText("Empty folder for the extracted files")

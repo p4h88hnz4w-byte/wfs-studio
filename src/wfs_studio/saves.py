@@ -57,6 +57,9 @@ def save_root(source: Path) -> Path:
     nested = source / "usr" / "save"
     if nested.is_dir():
         return nested
+    direct = source / "save"
+    if source.name == "usr" and direct.is_dir():
+        return direct
     return source
 
 
@@ -94,65 +97,104 @@ def savemii_dir_name(name: str, high_id: str, low_id: str) -> str:
     return f"{cleaned}{ident}"
 
 
+def _record_from_title(
+    high_id: str,
+    low: Path,
+    database: GameTdb | None,
+    source_root: Path,
+) -> SaveRecord | None:
+    if not low.is_dir() or low.is_symlink() or not _HEX8.fullmatch(low.name):
+        return None
+    user = low / "user"
+    if not user.is_dir():
+        return None
+    profiles: list[str] = []
+    has_common = False
+    try:
+        children = list(user.iterdir())
+    except OSError:
+        return None
+    for child in children:
+        if child.is_symlink() or not child.is_dir():
+            continue
+        if child.name == "common":
+            has_common = True
+        elif _PROFILE.fullmatch(child.name):
+            profiles.append(child.name)
+    if not profiles and not has_common:
+        return None
+    fields = meta_fields(low / "meta" / "meta.xml")
+    name = _localized_name(fields) or f"{high_id}{low.name.lower()}"
+    product = fields.get("product_code", "")
+    gametdb_name = ""
+    if database is not None and product:
+        found = lookup(database, product)
+        if found is not None:
+            gametdb_name = found[1]
+    return SaveRecord(
+        source_root=source_root,
+        path=low,
+        high_id=high_id.lower(),
+        low_id=low.name.lower(),
+        name=name,
+        product_code=product,
+        profiles=tuple(sorted(profiles, key=str.lower)),
+        has_common=has_common,
+        gametdb_name=gametdb_name,
+    )
+
+
+def _scan_high(high: Path, high_id: str, database: GameTdb | None, source_root: Path) -> list[SaveRecord]:
+    try:
+        children = list(high.iterdir())
+    except OSError:
+        return []
+    records: list[SaveRecord] = []
+    for low in children:
+        record = _record_from_title(high_id, low, database, source_root)
+        if record is not None:
+            records.append(record)
+    return records
+
+
+def _children_are_titles(path: Path) -> bool:
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return False
+    return any(
+        child.is_dir() and not child.is_symlink() and _HEX8.fullmatch(child.name) and (child / "user").is_dir()
+        for child in children
+    )
+
+
 def scan_saves(source: Path, database: GameTdb | None = None) -> list[SaveRecord]:
-    """Find title save folders. ``usr/save/system`` is not a game save."""
+    """Find title save folders. ``usr/save/system`` is not a game save.
+
+    ``source`` may be the dump, ``usr``, ``usr/save``, one high id such as
+    ``usr/save/00050000``, or a single title folder.
+    """
     root = save_root(source)
     if not root.is_dir():
         return []
-    records: list[SaveRecord] = []
-    try:
-        highs = list(root.iterdir())
-    except OSError:
-        return []
-    for high in highs:
-        if not high.is_dir() or high.is_symlink() or not _HEX8.fullmatch(high.name):
-            continue
+    if (root / "user").is_dir() and _HEX8.fullmatch(root.name):
+        parent = root.parent
+        high_id = parent.name if _HEX8.fullmatch(parent.name) else "00050000"
+        found = _record_from_title(high_id, root, database, root.parent)
+        records = [found] if found is not None else []
+    elif _children_are_titles(root):
+        high_id = root.name if _HEX8.fullmatch(root.name) else "00050000"
+        records = _scan_high(root, high_id, database, root)
+    else:
+        records = []
         try:
-            lows = list(high.iterdir())
+            highs = list(root.iterdir())
         except OSError:
-            continue
-        for low in lows:
-            if not low.is_dir() or low.is_symlink() or not _HEX8.fullmatch(low.name):
+            return []
+        for high in highs:
+            if not high.is_dir() or high.is_symlink() or not _HEX8.fullmatch(high.name):
                 continue
-            user = low / "user"
-            if not user.is_dir():
-                continue
-            profiles: list[str] = []
-            has_common = False
-            try:
-                children = list(user.iterdir())
-            except OSError:
-                continue
-            for child in children:
-                if child.is_symlink() or not child.is_dir():
-                    continue
-                if child.name == "common":
-                    has_common = True
-                elif _PROFILE.fullmatch(child.name):
-                    profiles.append(child.name)
-            if not profiles and not has_common:
-                continue
-            fields = meta_fields(low / "meta" / "meta.xml")
-            name = _localized_name(fields) or f"{high.name.lower()}{low.name.lower()}"
-            product = fields.get("product_code", "")
-            gametdb_name = ""
-            if database is not None and product:
-                found = lookup(database, product)
-                if found is not None:
-                    gametdb_name = found[1]
-            records.append(
-                SaveRecord(
-                    source_root=root,
-                    path=low,
-                    high_id=high.name.lower(),
-                    low_id=low.name.lower(),
-                    name=name,
-                    product_code=product,
-                    profiles=tuple(sorted(profiles, key=str.lower)),
-                    has_common=has_common,
-                    gametdb_name=gametdb_name,
-                )
-            )
+            records.extend(_scan_high(high, high.name, database, root))
     records.sort(key=lambda item: (item.display_name.lower(), item.title_id))
     return records
 

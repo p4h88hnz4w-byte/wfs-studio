@@ -32,6 +32,22 @@ def write_save(root: Path, high: str, low: str, profiles: dict[str, bytes], comm
     return folder
 
 
+def test_scan_accepts_the_high_id_folder_and_one_title(tmp_path: Path):
+    write_save(tmp_path, "00050000", "101DF400", {"80000013": b"profile"}, b"shared")
+    other = tmp_path / "usr" / "save" / "00050000" / "10111100" / "user" / "80000001"
+    other.mkdir(parents=True)
+    (other / "save.dat").write_bytes(b"second")
+    high = tmp_path / "usr" / "save" / "00050000"
+    from_high = scan_saves(high)
+    from_dump = scan_saves(tmp_path)
+    assert [record.title_id for record in from_high] == [record.title_id for record in from_dump]
+    assert len(from_high) == 2
+    one = scan_saves(high / "101DF400")
+    assert [record.title_id for record in one] == ["00050000-101df400"]
+    assert scan_saves(tmp_path / "usr" / "save") == from_dump
+    assert scan_saves(tmp_path / "usr") == from_dump
+
+
 def test_scan_lists_profiles_and_skips_system(tmp_path: Path):
     write_save(tmp_path, "00050000", "101DF400", {"80000013": b"profile"}, b"shared")
     system = tmp_path / "usr" / "save" / "system" / "barista"
