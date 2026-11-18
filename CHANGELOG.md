@@ -19,7 +19,7 @@ Hot fix 3. The opening paragraph is the program description: inspired by Wii Bac
 
 Hot fix 4. The window opens on Linux again.
 
-- Menu music was starting while the window was still being built. On PipeWire that call never returned, so the alias sat there. The track now starts after the window is up.
+- Menu music was starting while the window was being built, and again while Wayland was still showing it. On PipeWire that call never returned, so the alias sat there. The track now starts once the event loop is running, and the window is shown after that.
 
 ## 0.7.2
 

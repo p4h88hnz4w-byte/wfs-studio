@@ -58,8 +58,12 @@ def quiet_ffmpeg_logs() -> None:
     )
     if not names:
         return
+    # Use the copy Qt already loaded. Opening a second one deadlocks PipeWire.
+    mode = getattr(ctypes, "RTLD_NOLOAD", None)
+    if mode is None:
+        return
     try:
-        library = ctypes.CDLL(str(names[-1]))
+        library = ctypes.CDLL(str(names[-1]), mode=mode)
         library.av_log_set_level(_AV_LOG_ERROR)
     except OSError:
         return

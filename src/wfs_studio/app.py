@@ -1892,7 +1892,6 @@ class MainWindow(QMainWindow):
             return
         if not self.menu_music_action.isChecked():
             return
-        quiet_ffmpeg_logs()
         path = menu_track()
         if path is None:
             return
@@ -2196,11 +2195,17 @@ def main() -> None:
     app = WfsApplication([])
     apply_theme(app)
     window = MainWindow()
-    window.show()
-    # PipeWire does not answer until the Qt event loop is running. Starting
-    # the menu player while the window is still being built never returns
-    # on Linux, so the alias appears to hang.
-    QTimer.singleShot(0, window._start_menu_music)
+
+    def _open_window() -> None:
+        # PipeWire deadlocks if the player is created while the window is
+        # being built, and again while Wayland is still showing it. Start
+        # the track once the event loop is running, then show the window.
+        try:
+            window._start_menu_music()
+        finally:
+            window.show()
+
+    QTimer.singleShot(0, _open_window)
 
     def _on_sigint(_signum, _frame) -> None:
         request_interrupt(app)
