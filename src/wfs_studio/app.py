@@ -14,7 +14,17 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QSize, Qt, QProcess, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QFontMetrics, QIcon, QKeySequence, QPalette, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QColor,
+    QFontMetrics,
+    QIcon,
+    QKeySequence,
+    QPalette,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -93,7 +103,12 @@ from wfs_studio.saves import (
     with_archive_suffix,
     write_save_archive,
 )
-from wfs_studio.settings import load_settings, save_settings
+from wfs_studio.settings import (
+    LINUX_AUDIO_BACKENDS,
+    load_settings,
+    normalize_linux_audio_backend,
+    save_settings,
+)
 from wfs_studio.titles import (
     TitleRecord,
     directory_size,
@@ -403,6 +418,7 @@ class MainWindow(QMainWindow):
         self._player = None
         self._audio = None
         self._releasing_music = False
+        self.audio_backend_actions: dict[str, QAction] = {}
         self.setWindowTitle("WFS Studio")
         self.resize(1180, 760)
         self._build()
@@ -411,6 +427,10 @@ class MainWindow(QMainWindow):
         self._refresh_db_label()
         self._refresh_command()
         self.menu_music_action.toggled.connect(self._on_menu_music)
+        for name, action in self.audio_backend_actions.items():
+            action.toggled.connect(
+                lambda checked, backend=name: self._on_audio_backend(backend, checked)
+            )
 
     def _build(self) -> None:
         shell = QWidget()
@@ -435,6 +455,7 @@ class MainWindow(QMainWindow):
         self.menu_music_action = QAction("Menu music", self)
         self.menu_music_action.setCheckable(True)
         file_menu.addAction(self.menu_music_action)
+        self._build_audio_backend_menu(file_menu)
         file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
@@ -958,6 +979,7 @@ class MainWindow(QMainWindow):
         self.save_dest_edit.setText(self.settings["save_dest"])
         self.save_usb_box.setChecked(bool(self.settings["save_usb"]))
         self.menu_music_action.setChecked(bool(self.settings.get("menu_music", True)))
+        self._select_audio_backend()
         kind = self.settings["extract_type"]
         {"usb": self.usb_radio, "mlc": self.mlc_radio, "plain": self.plain_radio}.get(
             kind, self.mlc_radio
@@ -982,6 +1004,7 @@ class MainWindow(QMainWindow):
             "gametdb_zip": self.settings.get("gametdb_zip", ""),
             "cover_zip": self.settings.get("cover_zip", ""),
             "menu_music": self.menu_music_action.isChecked(),
+            "linux_audio_backend": self._chosen_audio_backend(),
         }
 
     def _persist(self) -> None:
@@ -1880,6 +1903,55 @@ class MainWindow(QMainWindow):
     def _about(self) -> None:
         QMessageBox.information(self, "About WFS Studio", self._about_text())
 
+    def _build_audio_backend_menu(self, file_menu) -> None:
+        """Linux-only choice between Qt's PulseAudio and PipeWire plugins."""
+        if not sys.platform.startswith("linux"):
+            return
+        audio_menu = file_menu.addMenu("Audio backend")
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        self._audio_backend_group = group
+        for name in LINUX_AUDIO_BACKENDS:
+            action = QAction(name, self)
+            action.setCheckable(True)
+            group.addAction(action)
+            audio_menu.addAction(action)
+            self.audio_backend_actions[name] = action
+
+    def _select_audio_backend(self) -> None:
+        if not self.audio_backend_actions:
+            return
+        saved = normalize_linux_audio_backend(self.settings.get("linux_audio_backend"))
+        env = os.environ.get("QT_AUDIO_BACKEND", "")
+        locked = _audio_backend_from_environment
+        shown = env if locked and env in LINUX_AUDIO_BACKENDS else saved
+        for name, action in self.audio_backend_actions.items():
+            action.setChecked(name == shown)
+            action.setEnabled(not locked)
+            if locked:
+                action.setToolTip("QT_AUDIO_BACKEND is already set.")
+
+    def _chosen_audio_backend(self) -> str:
+        saved = normalize_linux_audio_backend(self.settings.get("linux_audio_backend"))
+        # A launch variable is one run. Closing must not overwrite the saved choice.
+        if _audio_backend_from_environment:
+            return saved
+        for name, action in self.audio_backend_actions.items():
+            if action.isChecked():
+                return name
+        return saved
+
+    def _on_audio_backend(self, name: str, checked: bool) -> None:
+        if not checked:
+            return
+        if name == normalize_linux_audio_backend(self.settings.get("linux_audio_backend")):
+            return
+        self._persist()
+        if name != os.environ.get("QT_AUDIO_BACKEND", ""):
+            self.statusBar().showMessage(
+                name + " will be used the next time WFS Studio opens."
+            )
+
     def _on_menu_music(self, checked: bool) -> None:
         if checked:
             self._start_menu_music()
@@ -2159,6 +2231,29 @@ def apply_theme(app: QApplication) -> None:
     )
 
 
+# True when the process was started with QT_AUDIO_BACKEND already set.
+# The File menu then shows that plugin and does not save over the user's choice.
+_audio_backend_from_environment = False
+
+
+def apply_linux_audio_backend(saved: object) -> None:
+    """Choose Qt's audio plugin before the window exists.
+
+    PulseAudio is the default. PipeWire is used when that is the saved choice.
+    A variable that is already set, including an empty one the user exported,
+    is left alone.
+    """
+    global _audio_backend_from_environment
+    if not sys.platform.startswith("linux"):
+        _audio_backend_from_environment = False
+        return
+    if "QT_AUDIO_BACKEND" in os.environ:
+        _audio_backend_from_environment = True
+        return
+    _audio_backend_from_environment = False
+    os.environ["QT_AUDIO_BACKEND"] = normalize_linux_audio_backend(saved)
+
+
 class WfsApplication(QApplication):
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
@@ -2188,12 +2283,14 @@ def request_interrupt(app) -> None:
 
 
 def main() -> None:
-    # The PipeWire backend deadlocks inside this process: the audio call
-    # waits for a thread that has to re-enter the Python notify() override.
-    # PulseAudio on this machine is PipeWire's compatibility layer, and it
-    # does not deadlock.
+    # The plugin is chosen before QApplication. A later menu change is saved
+    # and used on the next launch. PulseAudio remains the default.
     if sys.platform.startswith("linux"):
-        os.environ.setdefault("QT_AUDIO_BACKEND", "PulseAudio")
+        try:
+            saved = load_settings(data_dir(repo_root())).get("linux_audio_backend")
+        except Exception:
+            saved = "PulseAudio"
+        apply_linux_audio_backend(saved)
     try:
         install_crash_log(data_dir(repo_root()))
     except Exception:
@@ -2203,9 +2300,9 @@ def main() -> None:
     window = MainWindow()
 
     def _open_window() -> None:
-        # PipeWire deadlocks if the player is created while the window is
-        # being built, and again while Wayland is still showing it. Start
-        # the track once the event loop is running, then show the window.
+        # Start the track once the event loop is running, then show the window.
+        # Creating the player while the window is being built, or while Wayland
+        # is still showing it, has hung this process before.
         try:
             window._start_menu_music()
         finally:

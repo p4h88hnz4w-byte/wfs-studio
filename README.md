@@ -2,13 +2,7 @@
 
 WFS Studio is a desktop program for your own Wii U backups. It is inspired by [Wii Backup Manager](https://wiibackupmanager.co.uk/), and it is for Mac and Linux. (Sorry PC, Places Traffic Cone on head, your just not part of the group anymore) It is a Python window around the official [wfs-tools](https://github.com/koolkdev/wfs-tools) v1.2.3 wfs-extract, plus a copier for extracted titles and saves. Its intended for Copying a Wii U hard drive into a backup, or into folders [Cemu](https://cemu.info/) can open.
 
-`CHANGELOG.md` is the record of what has been built. The short version:
-
-| | |
-| --- | --- |
-| Done | List titles from `meta/meta.xml`. Read a GameTDB `wiiutdb.zip`. Show the title's own icon when GameTDB has no picture. Copy a title into its own named folder and check the size, with an archive when every title is checked. Back up `usr/save` in SaveMii's folder layout, with Select all and a zip, 7z, or bzip2 archive of every save. Run `wfs-extract` on your own MLC or USB image. Edit → Select all checks every title or save, or selects the extract log. Ctrl+C in the terminal closes the window. Linux can install from `install-linux.sh`, which asks for a working directory, an alias, and bash or zsh. The window loops menu music (8bit Bossa by Joth, CC0). File → Menu music turns it off. Closing the window does not wait on the player. On Linux the audio backend is PulseAudio, so the window can open. Write a crash traceback to `cache/wfs-studio.log`. |
-| Not this program | Editing the bytes inside a save. `wfs-file-injector` and `wfs-reencryptor`. |
-| Next, when we pick it up | GameTDB pictures in the title list, closer to Wii Backup Manager. Then `make app` on this Mac, and the Linux AppImage. Downloads go on the GitHub Releases page. |
+`CHANGELOG.md` is the record of what has been built.
 
 ## Run
 
@@ -70,6 +64,12 @@ SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.
 - SLC and SLCCMPT dumps are not WFS images. `wfs-extract` cannot open `slc.bin` or `slccmpt.bin`.
 
 `cache/settings.json` stores the folders you pick, including key-file paths. It stays in `cache/` on your computer.
+
+## Menu music
+
+The window loops 8bit Bossa by Joth, CC0. File → Menu music turns it off, and that choice is remembered. Closing the window does not wait on the player.
+
+On Linux, File → Audio backend chooses PulseAudio or PipeWire. PulseAudio is the default. The choice is used the next time the window opens. If a PipeWire choice never opens the window, start that one run with `QT_AUDIO_BACKEND=PulseAudio`.
 
 ## Crash log
 

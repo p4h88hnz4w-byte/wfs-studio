@@ -22,7 +22,18 @@ DEFAULTS = {
     "save_dest": "",
     "save_usb": False,
     "menu_music": True,
+    "linux_audio_backend": "PulseAudio",
 }
+
+# Qt's QT_AUDIO_BACKEND names. PulseAudio stays the default: on Ubuntu it is
+# PipeWire's pulse layer, and it is the backend the window already ships with.
+LINUX_AUDIO_BACKENDS = ("PulseAudio", "PipeWire")
+
+
+def normalize_linux_audio_backend(value: object) -> str:
+    if value in LINUX_AUDIO_BACKENDS:
+        return str(value)
+    return "PulseAudio"
 
 
 def cache_dir(root: Path) -> Path:

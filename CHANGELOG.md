@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.5
+
+Linux can use Qt's PipeWire audio backend.
+
+- File → Audio backend offers PulseAudio and PipeWire. PulseAudio stays the default. The choice is remembered and used the next time the window opens. A `QT_AUDIO_BACKEND` variable that is already set is left alone.
+- PipeWire was checked on Ubuntu 24.04 with PipeWire 1.0.5. The menu track reached Playing, and closing the window still returned.
+
 ## 0.7.4
 
 The Linux window opens, and closing no longer waits on the menu player.
