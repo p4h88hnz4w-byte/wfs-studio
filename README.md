@@ -71,6 +71,8 @@ The window loops 8bit Bossa by Joth, CC0. File → Menu music turns it off, and 
 
 On Linux, File → Audio backend chooses PulseAudio or PipeWire. PulseAudio is the default. The choice is used the next time the window opens. If a PipeWire choice never opens the window, start that one run with `QT_AUDIO_BACKEND=PulseAudio`.
 
+Menu music is not supported on WSL. The installer still sets `QT_AUDIO_BACKEND=PulseAudio` for that launch, so Qt does not open the distro PipeWire backend, and File → Audio backend stays on that value.
+
 ## Crash log
 
 An unexpected error appends a traceback to `cache/wfs-studio.log`. About WFS Studio shows the full path. The same folder holds settings. It is not the shell's working directory: a launch from the Dock or Start Menu has no useful current directory, and a `.app` bundle cannot keep files inside itself.
@@ -109,6 +111,27 @@ bash install-linux.sh
 
 An empty working directory is a shallow clone of this repo plus the `wfs-tools` submodule. `vcpkg` is not downloaded. Python 3.10 or newer has to be on `PATH` as `python3`. On Debian or Ubuntu that is often `sudo apt install python3 python3-venv python3-pip git`. The script does not use root. Run it again to change the directory, the alias, or the shell file. The rest of that shell file stays.
 
+### Windows, through WSL
+
+On Windows, the window is still this Linux program, running inside WSL2. There is no Windows build.
+
+Supported: Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2 with WSLg. WSLg is the Windows 11 desktop integration. WSL1 cannot open the window. The distro has to be x86_64, because the official `wfs-extract` build used here is the Linux x86_64 one.
+
+Install Ubuntu or Debian from the Microsoft Store, open that distro, and run:
+
+```bash
+git clone --depth 1 https://github.com/p4h88hnz4w-byte/wfs-studio.git
+cd wfs-studio
+git submodule update --init --depth 1 third_party/wfs-tools
+bash install-linux.sh
+```
+
+Choose a working directory inside the Linux filesystem, such as the home directory. A path under `/mnt` is a Windows drive, and the virtualenv does not belong there. The installer stops if it sees one.
+
+The installer reads the distro before it asks where to install. Menu music is not supported on WSL. The alias still sets `QT_AUDIO_BACKEND=PulseAudio`, so Qt does not open the distro's PipeWire backend, and `QT_QPA_PLATFORM=xcb`, which is the display path WSLg provides. A missing Windows audio socket does not stop the install.
+
+If the window's libraries are missing, the installer prints one `sudo apt install` line and stops. It does not run that command.
+
 A checkout on a Mac, or a Linux machine where you want the developer tools, can still be built by hand:
 
 ```bash
@@ -137,7 +160,7 @@ pytest
 ## Layout
 
 ```
-install-linux.sh    Linux installer: working directory, alias, bash or zsh
+install-linux.sh    Linux installer, including Ubuntu and Debian on WSL2
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built

@@ -2,6 +2,16 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.6
+
+Ubuntu and Debian on WSL2 can use the Linux installer.
+
+- `install-linux.sh` accepts Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2 with WSLg, when the distro is x86_64. WSL1, other distros, and a working directory on a Windows drive (`/mnt`) are refused.
+- The distro is read from `os-release` before the installer asks any question.
+- Menu music is not supported on WSL. The alias still sets `QT_AUDIO_BACKEND=PulseAudio` so Qt does not use the distro PipeWire backend, and `QT_QPA_PLATFORM=xcb` so the window opens through WSLg. A missing Windows audio socket does not stop the install.
+- Missing window libraries are named in one `sudo apt install` line. The script does not run it.
+- These checks were run against the files WSL presents. They were not run on a Windows computer.
+
 ## 0.7.5
 
 Linux can use Qt's PipeWire audio backend.
