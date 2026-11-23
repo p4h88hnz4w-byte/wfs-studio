@@ -2,6 +2,16 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.7
+
+Fedora, Arch, and the other apt, dnf, and pacman desktops can use the Linux installer.
+
+- Missing window libraries are named with `apt`, `dnf`, or `pacman`, from the distro in `os-release`. The script still does not run that command. A present library could be reported missing; the check now reads the whole library list.
+- Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch on WSL2 use the same installer. Menu music stays unsupported there.
+- 32-bit x86 is refused.
+- On Ubuntu 24.04 the window opened through Wayland, PulseAudio played the menu track, and the process exited with the window. PySide 6.12. A desktop can still be missing `libxcb-cursor0` and `python3-venv`. The installer names the missing package and stops.
+- On Omarchy 4.5.0 the installer recognized the Arch family and found the window libraries. The alias does not choose the audio or display backend. The window was not opened on that machine.
+
 ## 0.7.6
 
 Ubuntu and Debian on WSL2 can use the Linux installer.

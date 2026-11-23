@@ -182,7 +182,8 @@ def test_wsl2_ubuntu_and_debian_use_the_linux_installer(tmp_path: Path):
         ("ubuntu", "24.04", "Linux version 4.4.0-19041-Microsoft", "x86_64", True, "WSL1"),
         ("ubuntu", "20.04", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", True, "22.04"),
         ("debian", "11", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", True, "Debian 12"),
-        ("fedora", "40", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", True, "Ubuntu 22.04"),
+        ("fedora", "38", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", True, "Fedora 39"),
+        ("opensuse-leap", "15.6", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", True, "Ubuntu 22.04"),
         ("ubuntu", "24.04", "Linux version 6.6.87.2-microsoft-standard-WSL2", "aarch64", True, "x86_64"),
         ("ubuntu", "24.04", "Linux version 6.6.87.2-microsoft-standard-WSL2", "x86_64", False, "WSLg"),
     ],
@@ -296,3 +297,151 @@ def test_wsl_accepts_the_runtime_libraries(tmp_path: Path):
     )
     assert result.returncode == 0, result.stderr
     assert "WSL2 Debian" in result.stdout
+
+
+SONAMES = (
+    "libxcb-cursor.so.0",
+    "libxkbcommon.so.0",
+    "libxkbcommon-x11.so.0",
+    "libEGL.so.1",
+    "libGL.so.1",
+    "libfontconfig.so.1",
+    "libpulse.so.0",
+)
+
+
+def _release(tmp_path: Path, distro: str, version: str = "", like: str = "") -> tuple[Path, Path]:
+    probe = tmp_path / "probe"
+    probe.mkdir(parents=True)
+    text = f"ID={distro}\n"
+    if version:
+        text += f'VERSION_ID="{version}"\n'
+    if like:
+        text += f'ID_LIKE="{like}"\n'
+    (probe / "os-release").write_text(text, encoding="utf-8")
+    return probe, probe / "libs"
+
+
+def _fill_libs(lib_dir: Path, missing: set[str] | None = None) -> None:
+    lib_dir.mkdir()
+    skip = missing or set()
+    for name in SONAMES:
+        if name not in skip:
+            (lib_dir / name).write_bytes(b"")
+
+
+def _run_native(home: Path, work: Path, release: Path, **extra: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["WFS_INSTALL_ALLOW_NON_LINUX"] = "1"
+    env["WFS_INSTALL_SKIP_PIP"] = "1"
+    env["WFS_INSTALL_DIR"] = str(work)
+    env["WFS_INSTALL_ALIAS"] = "wfs-studio"
+    env["WFS_INSTALL_SHELL"] = "bash"
+    env["WFS_INSTALL_OS_RELEASE"] = str(release / "os-release")
+    env.pop("WSL_DISTRO_NAME", None)
+    env.pop("WSL_INTEROP", None)
+    env.update(extra)
+    return subprocess.run(
+        ["bash", str(SCRIPT)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_wsl_fedora_and_arch_use_the_linux_installer(tmp_path: Path):
+    home = tmp_path / "home"
+    work = tmp_path / "work"
+    home.mkdir()
+    _checkout(work)
+    kernel = "Linux version 6.6.87.2-microsoft-standard-WSL2"
+    fedora = _wsl(tmp_path / "fedora", distro="fedora", version="40", kernel=kernel)
+    result = _run_wsl(home, work, *fedora[:2], **{"WFS_INSTALL_SKIP_PACKAGES": "1"})
+    assert result.returncode == 0, result.stderr
+    assert "Distro: fedora 40" in result.stdout
+    assert "WSL2 Fedora" in result.stdout
+    assert "Menu music is not supported on WSL." in result.stdout
+    alias = (home / ".bashrc").read_text(encoding="utf-8")
+    assert "QT_QPA_PLATFORM=xcb" in alias
+    assert "QT_AUDIO_BACKEND=PulseAudio" in alias
+
+    arch_home = tmp_path / "arch-home"
+    arch_home.mkdir()
+    arch = _wsl(tmp_path / "arch", distro="arch", version="", kernel=kernel)
+    arch_result = _run_wsl(arch_home, work, *arch[:2], **{"WFS_INSTALL_SKIP_PACKAGES": "1"})
+    assert arch_result.returncode == 0, arch_result.stderr
+    assert "Distro: arch" in arch_result.stdout
+    assert "WSL2 Arch" in arch_result.stdout
+
+
+def test_native_fedora_and_arch_name_their_own_packages(tmp_path: Path):
+    home = tmp_path / "home"
+    work = tmp_path / "work"
+    home.mkdir()
+    _checkout(work)
+    fedora_probe, fedora_libs = _release(tmp_path / "fedora", "fedora", "41")
+    _fill_libs(fedora_libs, {"libxcb-cursor.so.0"})
+    fedora = _run_native(
+        home,
+        work,
+        fedora_probe,
+        WFS_INSTALL_LIB_DIR=str(fedora_libs),
+    )
+    assert fedora.returncode == 1
+    assert "sudo dnf install xcb-util-cursor" in fedora.stderr
+    assert "apt " not in fedora.stderr
+    assert "libglvnd" not in fedora.stderr
+    assert not (home / ".bashrc").exists()
+
+    arch_home = tmp_path / "arch-home"
+    arch_home.mkdir()
+    arch_probe, arch_libs = _release(tmp_path / "arch", "arch")
+    _fill_libs(arch_libs, {"libEGL.so.1", "libGL.so.1"})
+    arch = _run_native(
+        arch_home,
+        work,
+        arch_probe,
+        WFS_INSTALL_LIB_DIR=str(arch_libs),
+    )
+    assert arch.returncode == 1
+    assert "sudo pacman -S --needed libglvnd" in arch.stderr
+    assert arch.stderr.count("libglvnd") == 1
+    assert "dnf " not in arch.stderr
+
+    omarchy_home = tmp_path / "omarchy-home"
+    omarchy_home.mkdir()
+    omarchy_probe, omarchy_libs = _release(tmp_path / "omarchy", "omarchy", like="arch")
+    _fill_libs(omarchy_libs)
+    omarchy = _run_native(
+        omarchy_home,
+        work,
+        omarchy_probe,
+        WFS_INSTALL_LIB_DIR=str(omarchy_libs),
+    )
+    assert omarchy.returncode == 0, omarchy.stderr
+    assert "Distro: omarchy" in omarchy.stdout
+    assert "WSLg" not in omarchy.stdout
+    alias = (omarchy_home / ".bashrc").read_text(encoding="utf-8")
+    assert "QT_AUDIO_BACKEND" not in alias
+    assert "QT_QPA_PLATFORM" not in alias
+
+
+def test_native_rhel_like_uses_dnf_and_32bit_is_refused(tmp_path: Path):
+    home = tmp_path / "home"
+    work = tmp_path / "work"
+    home.mkdir()
+    _checkout(work)
+    rocky_probe, rocky_libs = _release(tmp_path / "rocky", "bazzite", "9", like="fedora")
+    _fill_libs(rocky_libs, {"libpulse.so.0"})
+    rocky = _run_native(home, work, rocky_probe, WFS_INSTALL_LIB_DIR=str(rocky_libs))
+    assert rocky.returncode == 1
+    assert "sudo dnf install pulseaudio-libs" in rocky.stderr
+
+    bit_home = tmp_path / "bit-home"
+    bit_home.mkdir()
+    refused = _run_native(bit_home, work, rocky_probe, WFS_INSTALL_MACHINE="i686", WFS_INSTALL_SKIP_PACKAGES="1")
+    assert refused.returncode == 1
+    assert "32-bit x86 is not supported." in refused.stderr
+    assert not (bit_home / ".bashrc").exists()

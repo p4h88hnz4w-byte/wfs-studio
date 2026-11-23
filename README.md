@@ -69,7 +69,7 @@ SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.
 
 The window loops 8bit Bossa by Joth, CC0. File → Menu music turns it off, and that choice is remembered. Closing the window does not wait on the player.
 
-On Linux, File → Audio backend chooses PulseAudio or PipeWire. PulseAudio is the default. The choice is used the next time the window opens. If a PipeWire choice never opens the window, start that one run with `QT_AUDIO_BACKEND=PulseAudio`.
+On Linux, File → Audio backend chooses PulseAudio or PipeWire. PulseAudio is the default. The choice is used the next time the window opens. If a PipeWire choice never opens the window, start that one run with `QT_AUDIO_BACKEND=PulseAudio`. The terminal can still print FFmpeg's file banner when the track starts. That line is not a failure.
 
 Menu music is not supported on WSL. The installer still sets `QT_AUDIO_BACKEND=PulseAudio` for that launch, so Qt does not open the distro PipeWire backend, and File → Audio backend stays on that value.
 
@@ -109,13 +109,17 @@ cd wfs-studio
 bash install-linux.sh
 ```
 
-An empty working directory is a shallow clone of this repo plus the `wfs-tools` submodule. `vcpkg` is not downloaded. Python 3.10 or newer has to be on `PATH` as `python3`. On Debian or Ubuntu that is often `sudo apt install python3 python3-venv python3-pip git`. The script does not use root. Run it again to change the directory, the alias, or the shell file. The rest of that shell file stays.
+An empty working directory is a shallow clone of this repo plus the `wfs-tools` submodule. `vcpkg` is not downloaded. Git is required only for that clone. Python 3.10 or newer has to be on `PATH` as `python3`. On Debian or Ubuntu that is often `sudo apt install python3 python3-venv python3-pip git`. On Fedora or RHEL it is `sudo dnf install python3 python3-pip git`. On Arch it is `sudo pacman -S python python-pip git`. The script does not use root. Run it again to change the directory, the alias, or the shell file. The rest of that shell file stays.
+
+The installer reads the distro before it asks where to install. Omarchy reports itself as `omarchy` and is installed with pacman. If the window's libraries are missing, it prints one install line and stops. Debian and Ubuntu get `sudo apt install`. Fedora, RHEL, and the distros built on them get `sudo dnf install`. Arch, Omarchy, and the distros built on Arch get `sudo pacman -S --needed`. It does not run that command. Ubuntu 24.04 can still be missing `libxcb-cursor0` and `python3-venv` on a desktop. 32-bit x86 is refused. The Linux `wfs-extract` build used here is the x86_64 one.
+
+On Ubuntu 24.04 the window opened through Wayland with the PulseAudio default, and it closed with the window. On Omarchy 4.5.0 the installer recognized the distro and the libraries. The window was not opened there.
 
 ### Windows, through WSL
 
 On Windows, the window is still this Linux program, running inside WSL2. There is no Windows build.
 
-Supported: Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2 with WSLg. WSLg is the Windows 11 desktop integration. WSL1 cannot open the window. The distro has to be x86_64, because the official `wfs-extract` build used here is the Linux x86_64 one.
+Supported: Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch, on WSL2 with WSLg. WSLg is the Windows 11 desktop integration. WSL1 cannot open the window. The distro has to be x86_64, because the official `wfs-extract` build used here is the Linux x86_64 one. 32-bit x86 is refused.
 
 Install Ubuntu or Debian from the Microsoft Store, open that distro, and run:
 
@@ -130,7 +134,7 @@ Choose a working directory inside the Linux filesystem, such as the home directo
 
 The installer reads the distro before it asks where to install. Menu music is not supported on WSL. The alias still sets `QT_AUDIO_BACKEND=PulseAudio`, so Qt does not open the distro's PipeWire backend, and `QT_QPA_PLATFORM=xcb`, which is the display path WSLg provides. A missing Windows audio socket does not stop the install.
 
-If the window's libraries are missing, the installer prints one `sudo apt install` line and stops. It does not run that command.
+If the window's libraries are missing, the installer prints one `sudo apt install`, `sudo dnf install`, or `sudo pacman -S --needed` line and stops. It does not run that command.
 
 A checkout on a Mac, or a Linux machine where you want the developer tools, can still be built by hand:
 
@@ -160,7 +164,7 @@ pytest
 ## Layout
 
 ```
-install-linux.sh    Linux installer, including Ubuntu and Debian on WSL2
+install-linux.sh    Linux installer for apt, dnf, and pacman, including WSL2
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built

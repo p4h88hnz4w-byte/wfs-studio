@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install WFS Studio on Linux and add an alias to bash or zsh.
 #
-# Ubuntu 22.04+ and Debian 12+ on WSL2 use this same script. WSL1, other
-# distros, and a Windows drive (/mnt) are refused. Native Windows is not
-# installed by this script.
+# Native installs name missing window libraries for apt, dnf, or pacman.
+# Ubuntu 22.04+, Debian 12+, Fedora 39+, and Arch on WSL2 use this same
+# script. WSL1, other WSL distros, a Windows drive (/mnt), and 32-bit x86
+# are refused. Native Windows is not installed by this script.
 #
 # The script asks three things, then follows those answers:
 #   the working directory, the alias name, and bash or zsh.
@@ -44,6 +45,8 @@ wsl_session=0
 wsl_family=""
 distro_id=""
 distro_version=""
+distro_like=""
+pkg_family=""
 
 wsl_detected() {
   if [[ -n "${WSL_DISTRO_NAME:-}" || -n "${WSL_INTEROP:-}" ]]; then
@@ -67,11 +70,39 @@ os_release_value() {
 read_distro() {
   distro_id=""
   distro_version=""
+  distro_like=""
+  pkg_family=""
   if [[ ! -r "$os_release_file" ]]; then
     return
   fi
   distro_id="$(os_release_value ID)"
   distro_version="$(os_release_value VERSION_ID)"
+  distro_like="$(os_release_value ID_LIKE)"
+  set_pkg_family
+}
+
+set_pkg_family() {
+  local id like
+  id="$(printf '%s' "$distro_id" | tr '[:upper:]' '[:lower:]')"
+  like="$(printf '%s' " $distro_like " | tr '[:upper:]' '[:lower:]')"
+  case "$id" in
+    ubuntu|debian|linuxmint|pop)
+      pkg_family="apt"
+      ;;
+    fedora|rhel|centos|rocky|almalinux|nobara)
+      pkg_family="dnf"
+      ;;
+    arch|manjaro|endeavouros|garuda|cachyos|omarchy|artix)
+      pkg_family="pacman"
+      ;;
+    *)
+      case "$like" in
+        *" debian "*|*" ubuntu "*) pkg_family="apt" ;;
+        *" fedora "*|*" rhel "*) pkg_family="dnf" ;;
+        *" arch "*) pkg_family="pacman" ;;
+      esac
+      ;;
+  esac
 }
 
 version_at_least() {
@@ -106,10 +137,11 @@ have_soname() {
     return
   fi
   if ! command -v ldconfig >/dev/null 2>&1; then
-    echo "ldconfig is not available, so the WSL library check cannot run." >&2
+    echo "ldconfig is not available, so the library check cannot run." >&2
     exit 1
   fi
-  ldconfig -p 2>/dev/null | awk '{print $1}' | grep -F -x -q "$soname"
+  # grep -q in a pipefail pipeline can die with SIGPIPE before a match counts.
+  ldconfig -p 2>/dev/null | awk -v name="$soname" '$1 == name { found = 1 } END { exit found ? 0 : 1 }'
 }
 
 require_supported_wsl() {
@@ -132,12 +164,12 @@ require_supported_wsl() {
     echo "This looks like WSL, but ${os_release_file} cannot be read." >&2
     exit 1
   fi
-  os_id="$distro_id"
+  os_id="$(printf '%s' "$distro_id" | tr '[:upper:]' '[:lower:]')"
   os_version="$distro_version"
   case "$os_id" in
     ubuntu)
       if ! version_at_least "$os_version" "22.04"; then
-        echo "This installer supports Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2." >&2
+        echo "This installer supports Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch, on WSL2." >&2
         echo "This system is ubuntu ${os_version:-with no version}." >&2
         exit 1
       fi
@@ -145,14 +177,28 @@ require_supported_wsl() {
       ;;
     debian)
       if ! version_at_least "$os_version" "12"; then
-        echo "This installer supports Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2." >&2
+        echo "This installer supports Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch, on WSL2." >&2
         echo "This system is debian ${os_version:-with no version}." >&2
         exit 1
       fi
       wsl_family="Debian"
       ;;
+    fedora)
+      if ! version_at_least "$os_version" "39"; then
+        echo "This installer supports Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch, on WSL2." >&2
+        echo "This system is fedora ${os_version:-with no version}." >&2
+        exit 1
+      fi
+      wsl_family="Fedora"
+      ;;
+    arch)
+      wsl_family="Arch"
+      ;;
+    omarchy)
+      wsl_family="Omarchy"
+      ;;
     *)
-      echo "This installer supports Ubuntu 22.04 or newer, and Debian 12 or newer, on WSL2." >&2
+      echo "This installer supports Ubuntu 22.04 or newer, Debian 12 or newer, Fedora 39 or newer, and Arch, on WSL2." >&2
       echo "This system is ${os_id:-unknown}." >&2
       exit 1
       ;;
@@ -169,29 +215,83 @@ require_supported_wsl() {
   fi
 }
 
-require_wsl_libraries() {
-  local pair soname package missing=""
-  local pairs=(
-    "libxcb-cursor.so.0|libxcb-cursor0"
-    "libxkbcommon.so.0|libxkbcommon0"
-    "libxkbcommon-x11.so.0|libxkbcommon-x11-0"
-    "libEGL.so.1|libegl1"
-    "libGL.so.1|libgl1"
-    "libfontconfig.so.1|libfontconfig1"
-    "libpulse.so.0|libpulse0"
+package_for_soname() {
+  case "${pkg_family}:$1" in
+    apt:libxcb-cursor.so.0) printf '%s\n' libxcb-cursor0 ;;
+    apt:libxkbcommon.so.0) printf '%s\n' libxkbcommon0 ;;
+    apt:libxkbcommon-x11.so.0) printf '%s\n' libxkbcommon-x11-0 ;;
+    apt:libEGL.so.1) printf '%s\n' libegl1 ;;
+    apt:libGL.so.1) printf '%s\n' libgl1 ;;
+    apt:libfontconfig.so.1) printf '%s\n' libfontconfig1 ;;
+    apt:libpulse.so.0) printf '%s\n' libpulse0 ;;
+    dnf:libxcb-cursor.so.0) printf '%s\n' xcb-util-cursor ;;
+    dnf:libxkbcommon.so.0) printf '%s\n' libxkbcommon ;;
+    dnf:libxkbcommon-x11.so.0) printf '%s\n' libxkbcommon-x11 ;;
+    dnf:libEGL.so.1) printf '%s\n' libglvnd-egl ;;
+    dnf:libGL.so.1) printf '%s\n' libglvnd-glx ;;
+    dnf:libfontconfig.so.1) printf '%s\n' fontconfig ;;
+    dnf:libpulse.so.0) printf '%s\n' pulseaudio-libs ;;
+    pacman:libxcb-cursor.so.0) printf '%s\n' xcb-util-cursor ;;
+    pacman:libxkbcommon.so.0) printf '%s\n' libxkbcommon ;;
+    pacman:libxkbcommon-x11.so.0) printf '%s\n' libxkbcommon-x11 ;;
+    pacman:libEGL.so.1) printf '%s\n' libglvnd ;;
+    pacman:libGL.so.1) printf '%s\n' libglvnd ;;
+    pacman:libfontconfig.so.1) printf '%s\n' fontconfig ;;
+    pacman:libpulse.so.0) printf '%s\n' libpulse ;;
+    *) return 1 ;;
+  esac
+}
+
+require_libraries() {
+  local soname package missing="" seen=" "
+  local sonames=(
+    libxcb-cursor.so.0
+    libxkbcommon.so.0
+    libxkbcommon-x11.so.0
+    libEGL.so.1
+    libGL.so.1
+    libfontconfig.so.1
+    libpulse.so.0
   )
-  for pair in "${pairs[@]}"; do
-    soname="${pair%%|*}"
-    package="${pair#*|}"
-    if ! have_soname "$soname"; then
-      missing="${missing} ${package}"
+  for soname in "${sonames[@]}"; do
+    if have_soname "$soname"; then
+      continue
     fi
+    package="$(package_for_soname "$soname")" || continue
+    case "$seen" in
+      *" ${package} "*) continue ;;
+    esac
+    missing="${missing} ${package}"
+    seen="${seen}${package} "
   done
-  if [[ -n "$missing" ]]; then
-    echo "WSL is missing libraries the window needs." >&2
-    echo "sudo apt install${missing}" >&2
-    exit 1
+  if [[ -z "$missing" ]]; then
+    return
   fi
+  echo "This system is missing libraries the window needs." >&2
+  case "$pkg_family" in
+    apt) echo "sudo apt install${missing}" >&2 ;;
+    dnf) echo "sudo dnf install${missing}" >&2 ;;
+    pacman) echo "sudo pacman -S --needed${missing}" >&2 ;;
+  esac
+  exit 1
+}
+
+refuse_32bit() {
+  local machine="${WFS_INSTALL_MACHINE:-$(uname -m)}"
+  case "$machine" in
+    i386|i486|i586|i686)
+      echo "32-bit x86 is not supported." >&2
+      exit 1
+      ;;
+  esac
+}
+
+python_hint() {
+  case "$pkg_family" in
+    apt) echo "Often: sudo apt install python3 python3-venv python3-pip" >&2 ;;
+    dnf) echo "Often: sudo dnf install python3 python3-pip" >&2 ;;
+    pacman) echo "Often: sudo pacman -S python python-pip" >&2 ;;
+  esac
 }
 
 refuse_windows_drive() {
@@ -212,6 +312,12 @@ fi
 if wsl_detected; then
   wsl_session=1
   require_supported_wsl
+else
+  refuse_32bit
+fi
+
+if [[ "${WFS_INSTALL_SKIP_PACKAGES:-}" != "1" && -n "$pkg_family" ]]; then
+  require_libraries
 fi
 
 answer=""
@@ -295,12 +401,20 @@ if [[ ! -f "$work/pyproject.toml" ]]; then
 fi
 
 python_bin="$work/.venv/bin/python"
-if [[ "$wsl_session" -eq 1 && "${WFS_INSTALL_SKIP_PACKAGES:-}" != "1" ]]; then
-  require_wsl_libraries
-fi
 if [[ "${WFS_INSTALL_SKIP_PIP:-}" != "1" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Python 3.10 or newer is required, and python3 is not on PATH." >&2
+    python_hint
+    exit 1
+  fi
   if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
     echo "Python 3.10 or newer is required. python3 is older than that." >&2
+    python_hint
+    exit 1
+  fi
+  if ! python3 -c 'import ensurepip' >/dev/null 2>&1; then
+    echo "python3 cannot create a virtualenv because ensurepip is missing." >&2
+    python_hint
     exit 1
   fi
   python3 -m venv "$work/.venv"
