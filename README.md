@@ -111,9 +111,23 @@ bash install-linux.sh
 
 An empty working directory is a shallow clone of this repo plus the `wfs-tools` submodule. `vcpkg` is not downloaded. Git is required only for that clone. Python 3.10 or newer has to be on `PATH` as `python3`. On Debian or Ubuntu that is often `sudo apt install python3 python3-venv python3-pip git`. On Fedora or RHEL it is `sudo dnf install python3 python3-pip git`. On Arch it is `sudo pacman -S python python-pip git`. The script does not use root. Run it again to change the directory, the alias, or the shell file. The rest of that shell file stays.
 
-The installer reads the distro before it asks where to install. Omarchy reports itself as `omarchy` and is installed with pacman. If the window's libraries are missing, it prints one install line and stops. Debian and Ubuntu get `sudo apt install`. Fedora, RHEL, and the distros built on them get `sudo dnf install`. Arch, Omarchy, and the distros built on Arch get `sudo pacman -S --needed`. It does not run that command. Ubuntu 24.04 can still be missing `libxcb-cursor0` and `python3-venv` on a desktop. 32-bit x86 is refused. The Linux `wfs-extract` build used here is the x86_64 one.
+### Linux dependencies
 
-On Ubuntu 24.04 and on Omarchy 4.5.0 the window opened through Wayland with the PulseAudio default, and it closed with the window. Omarchy was Python 3.14 with PySide 6.12. `libxcb-cursor.so.0` is linked by Qt's xcb plugin. Without it, an X11 session does not open, and Qt says the library is required from 6.5.0. A Wayland session does not load that library. The installer still asks for it so the X11 path can start. Debian calls the package `libxcb-cursor0`. Fedora and Arch call it `xcb-util-cursor`.
+`requirements.txt` installs PySide6 into the virtualenv. These system libraries are not in that file. The installer checks the library names and, for whatever is missing, prints one `sudo apt install`, `sudo dnf install`, or `sudo pacman -S --needed` line. It does not run that command.
+
+| Library | Debian and Ubuntu | Fedora and RHEL | Arch |
+| --- | --- | --- | --- |
+| `libxcb-cursor.so.0` | `libxcb-cursor0` | `xcb-util-cursor` | `xcb-util-cursor` |
+| `libxkbcommon.so.0` | `libxkbcommon0` | `libxkbcommon` | `libxkbcommon` |
+| `libxkbcommon-x11.so.0` | `libxkbcommon-x11-0` | `libxkbcommon-x11` | `libxkbcommon-x11` |
+| `libEGL.so.1` | `libegl1` | `libglvnd-egl` | `libglvnd` |
+| `libGL.so.1` | `libgl1` | `libglvnd-glx` | `libglvnd` |
+| `libfontconfig.so.1` | `libfontconfig1` | `fontconfig` | `fontconfig` |
+| `libpulse.so.0` | `libpulse0` | `pulseaudio-libs` | `libpulse` |
+
+`libxcb-cursor.so.0` is linked by Qt's xcb plugin. Without it, an X11 session does not open, and Qt says the library is required from 6.5.0. A Wayland session does not load that library. The installer still asks for it so the X11 path can start. Ubuntu 24.04 can still be missing `libxcb-cursor0` and `python3-venv` on a desktop.
+
+The installer reads the distro before it asks where to install. Omarchy reports itself as `omarchy` and uses the Arch packages. 32-bit x86 is refused. The Linux `wfs-extract` build used here is the x86_64 one. On Ubuntu 24.04 and on Omarchy 4.5.0 the window opened through Wayland with the PulseAudio default, and it closed with the window. Omarchy was Python 3.14 with PySide 6.12.
 
 ### Windows, through WSL
 
@@ -149,7 +163,7 @@ python -m wfs_studio.binaries
 python -m wfs_studio
 ```
 
-`requirements.txt` is the package the window needs: PySide6. `requirements-dev.txt` adds pytest and PyInstaller. The same lists are the `project.dependencies` and optional extras in `pyproject.toml`.
+`requirements.txt` is the Python package the window needs: PySide6. The Linux system libraries in the table above are separate, and pip does not install them. `requirements-dev.txt` adds pytest and PyInstaller. The same Python lists are the `project.dependencies` and optional extras in `pyproject.toml`.
 
 `third_party/wfs-tools` is a git submodule pinned to upstream tag `v1.2.3` (commit `f5c652e`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a normal clone. The nested `wfslib` and `vcpkg` submodules are not required to run the GUI.
 
@@ -168,7 +182,7 @@ install-linux.sh    Linux installer for apt, dnf, and pacman, including WSL2
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built
-requirements.txt    Packages needed to run the window
+requirements.txt    Python package for the window, PySide6
 requirements-dev.txt  Test and pack extras
 third_party/wfs-tools/   Upstream source at v1.2.3
 packaging/licenses/ Qt and app license text copied into a frozen build

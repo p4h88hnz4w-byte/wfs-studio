@@ -8,6 +8,7 @@ The window was opened on Arch, and `libxcb-cursor` stays required.
 
 - Omarchy 4.5.0, Python 3.14.8, and PySide 6.12 opened the window through Wayland. PulseAudio played the menu track, and the process exited with the window.
 - Qt's xcb plugin links `libxcb-cursor.so.0`. Without that library an X11 session stops, and Qt says the library is required from 6.5.0. A Wayland session does not load it. The installer still names the package, so the X11 path can open. Debian calls it `libxcb-cursor0`. Fedora and Arch call it `xcb-util-cursor`.
+- The Setup section lists the Python packages and the seven window libraries the installer checks, with the `apt`, `dnf`, and `pacman` package names.
 
 ## 0.7.7
 
