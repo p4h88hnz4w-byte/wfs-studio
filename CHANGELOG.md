@@ -2,6 +2,13 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.7.1
+
+The window was opened on Arch, and `libxcb-cursor` stays required.
+
+- Omarchy 4.5.0, Python 3.14.8, and PySide 6.12 opened the window through Wayland. PulseAudio played the menu track, and the process exited with the window.
+- Qt's xcb plugin links `libxcb-cursor.so.0`. Without that library an X11 session stops, and Qt says the library is required from 6.5.0. A Wayland session does not load it. The installer still names the package, so the X11 path can open. Debian calls it `libxcb-cursor0`. Fedora and Arch call it `xcb-util-cursor`.
+
 ## 0.7.7
 
 Fedora, Arch, and the other apt, dnf, and pacman desktops can use the Linux installer.

@@ -244,6 +244,8 @@ package_for_soname() {
 
 require_libraries() {
   local soname package missing="" seen=" "
+  # libxcb-cursor.so.0 is linked by Qt's xcb plugin. Wayland does not
+  # load it. The check stays so an X11 session is not left unable to open.
   local sonames=(
     libxcb-cursor.so.0
     libxkbcommon.so.0

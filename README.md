@@ -113,7 +113,7 @@ An empty working directory is a shallow clone of this repo plus the `wfs-tools` 
 
 The installer reads the distro before it asks where to install. Omarchy reports itself as `omarchy` and is installed with pacman. If the window's libraries are missing, it prints one install line and stops. Debian and Ubuntu get `sudo apt install`. Fedora, RHEL, and the distros built on them get `sudo dnf install`. Arch, Omarchy, and the distros built on Arch get `sudo pacman -S --needed`. It does not run that command. Ubuntu 24.04 can still be missing `libxcb-cursor0` and `python3-venv` on a desktop. 32-bit x86 is refused. The Linux `wfs-extract` build used here is the x86_64 one.
 
-On Ubuntu 24.04 the window opened through Wayland with the PulseAudio default, and it closed with the window. On Omarchy 4.5.0 the installer recognized the distro and the libraries. The window was not opened there.
+On Ubuntu 24.04 and on Omarchy 4.5.0 the window opened through Wayland with the PulseAudio default, and it closed with the window. Omarchy was Python 3.14 with PySide 6.12. `libxcb-cursor.so.0` is linked by Qt's xcb plugin. Without it, an X11 session does not open, and Qt says the library is required from 6.5.0. A Wayland session does not load that library. The installer still asks for it so the X11 path can start. Debian calls the package `libxcb-cursor0`. Fedora and Arch call it `xcb-util-cursor`.
 
 ### Windows, through WSL
 
