@@ -17,9 +17,12 @@ from wfs_studio.copy_job import (
     tree_totals,
 )
 from wfs_studio.extract import (
+    CatalogRequest,
     ExtractRequest,
     append_extract_chunk,
     build_args,
+    build_catalog_args,
+    catalog_binary,
     parse_extract_line,
     recovery_warning,
 )
@@ -423,9 +426,64 @@ def test_extract_command_matches_image_type(tmp_path: Path):
     assert "--otp" not in plain
     assert parse_extract_line("Dumping /usr/title/game")["path"] == "/usr/title/game"
     assert parse_extract_line("Done!")["event"] == "done"
+    assert parse_extract_line("Titles: 4") == {"event": "titles", "path": "4"}
     assert parse_extract_line("Error: bad key")["event"] == "error"
     assert recovery_warning("/usr/save", True) is None
     assert recovery_warning("/sys", True) is not None
+
+
+def test_catalog_command_reads_usr_title_metadata(tmp_path: Path, monkeypatch):
+    binary = tmp_path / "wfs-catalog"
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    args = build_catalog_args(
+        CatalogRequest(
+            binary=binary,
+            input_path=Path("usb.img"),
+            image_type="usb",
+            output_path=Path("out"),
+            otp=Path("otp.bin"),
+            seeprom=Path("seeprom.bin"),
+            dump_usr_dir=True,
+        )
+    )
+    assert args[0] == str(binary)
+    assert "--dump-path" not in args
+    assert "--verbose" not in args
+    assert "--dump-usr-dir" in args
+    assert args[args.index("--type") + 1] == "usb"
+    assert args[args.index("--seeprom") + 1] == "seeprom.bin"
+    plain = build_catalog_args(
+        CatalogRequest(
+            binary=binary,
+            input_path=Path("plain.img"),
+            image_type="plain",
+            output_path=Path("out"),
+            otp=Path("otp.bin"),
+            seeprom=Path("seeprom.bin"),
+        )
+    )
+    assert "--otp" not in plain
+    assert "--seeprom" not in plain
+    monkeypatch.delenv("WFS_CATALOG", raising=False)
+    assert catalog_binary(tmp_path) is None
+    monkeypatch.setenv("WFS_CATALOG", str(binary))
+    assert catalog_binary(tmp_path) == binary
+    monkeypatch.setenv("WFS_CATALOG", str(tmp_path / "missing"))
+    assert catalog_binary(tmp_path) is None
+
+
+def test_catalog_layout_scans_without_code_or_content(tmp_path: Path):
+    title = tmp_path / "usr" / "title" / "00050000" / "101df400" / "meta"
+    title.mkdir(parents=True)
+    (title / "meta.xml").write_text(META, encoding="utf-8")
+    (title / "iconTex.tga").write_bytes(b"tga")
+    records = scan_titles(tmp_path)
+    assert len(records) == 1
+    assert records[0].name == "POKKÉN TOURNAMENT Deluxe"
+    assert records[0].kind == "Game"
+    assert not (tmp_path / "usr" / "title" / "00050000" / "101df400" / "code").exists()
+    assert not (tmp_path / "usr" / "title" / "00050000" / "101df400" / "content").exists()
 
 
 def test_platform_key_and_zip_slip(tmp_path: Path):

@@ -2,6 +2,15 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.8
+
+Catalog titles reads `/usr/title` from an image and writes `meta/meta.xml` and `meta/iconTex.tga`.
+
+- The Extract tab has Catalog titles. The output folder is a title list the Titles tab can scan. A full extract still runs the official `wfs-extract` binary.
+- `scripts/build-catalog.sh` builds that tool and checks out `wfslib` only. It does not clone vcpkg. On this Mac the build uses Homebrew `cmake`, `boost`, and `cryptopp`. On Linux, GCC 14 is required. The build includes `cstdint` so GCC 16 can compile wfslib.
+- Menu audio no longer calls into FFmpeg while Qt is opening the track. That call froze the window on PipeWire and the track never started.
+- A file that is not a WFS image is left unchanged, and the tool writes no output. The catalog was then run read-only on the original Wii U USB disk on Mac, Ubuntu, and Arch. Each run listed 128 titles and wrote only `meta.xml` and `iconTex.tga`. The disk stayed unmounted. On Linux the disk node needs administrator rights. The tool does not run sudo.
+
 ## 0.7.7.1
 
 The window was opened on Arch, and `libxcb-cursor` stays required.

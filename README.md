@@ -40,7 +40,9 @@ To restore on a Wii U, copy that folder to `sd:/wiiu/backups` and use SaveMii th
 
 ## Extract tab
 
-Runs official `wfs-extract`. It reads an image or device and writes into the output folder. The input is not modified. Edit → Select all, while this tab is in front, selects the whole log.
+Catalog titles reads `/usr/title` and writes `meta/meta.xml` and `iconTex.tga` into the output folder. Point the Titles tab at that folder to browse the list. It reads an image. An extracted title folder is already decrypted, and this pass does not open it. Start extract runs official `wfs-extract` and writes the dump path you enter. The input stays as it is. Edit → Select all, while this tab is in front, selects the whole log.
+
+The catalog tool is built with `scripts/build-catalog.sh` (or `make catalog`). That script checks out `wfslib` and does not clone vcpkg. On a Mac the build needs Homebrew `cmake`, `boost`, and `cryptopp`. On Linux, GCC 14 is required. On Arch the other build packages are `cmake`, `boost`, and `crypto++`. The built program is `native/wfs-catalog/build/wfs-catalog`.
 
 | Type | Keys | Typical input |
 | --- | --- | --- |
@@ -48,7 +50,7 @@ Runs official `wfs-extract`. It reads an image or device and writes into the out
 | `usb` | `otp.bin` and `seeprom.bin` | Wii U USB device or image |
 | `plain` | none | A filesystem already decrypted by `wfs-reencryptor` |
 
-Dump path defaults to `/`. Recovery mode (`--dump-usr-dir`) only accepts paths inside `/usr`. The command includes `--verbose`, which prints `Dumping /path` when each file starts. That line has no byte total, so the progress on this tab is a file count.
+Dump path defaults to `/` for a full extract. Recovery mode (`--dump-usr-dir`) only accepts paths inside `/usr`. Catalog titles always reads `/usr/title`, including when recovery mode is on. The extract command includes `--verbose`, which prints `Dumping /path` when each file starts. That line has no byte total, so the progress on this tab is a file count. A catalog prints the same line for `meta.xml` and `iconTex.tga`, then `Titles:` and the count.
 
 SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.bin`.
 
@@ -56,10 +58,11 @@ SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.
 
 - Copying and save backup read the source and write only inside the destination you pick. The dump is not changed.
 - Extract reads the input image or device and writes only inside the output folder.
+- Catalog titles reads `/usr/title` and writes `meta/meta.xml` and `iconTex.tga` inside that same output folder.
 - The destination cannot be the source, and it cannot sit inside the source.
 - Stopping a copy deletes the unfinished temporary file (`.wfs-studio-partial`) and leaves completed files where they are.
 - Ctrl+C in the terminal closes the window and saves the folders you picked. A running copy or extract is stopped. Press it again to stop the process immediately.
-- `otp.bin` and `seeprom.bin` are used only as local paths passed to `wfs-extract`. They stay on your computer.
+- `otp.bin` and `seeprom.bin` are used only as local paths passed to `wfs-extract` and the catalog tool. They stay on your computer.
 - `wfs-file-injector` and `wfs-reencryptor` are in the official zip. This program does not run them. Both can change a WFS image.
 - SLC and SLCCMPT dumps are not WFS images. `wfs-extract` cannot open `slc.bin` or `slccmpt.bin`.
 
@@ -93,7 +96,7 @@ Each person supplies their own console data. This repository does not include a 
 - Python 3.10 or newer. On this Mac the system Python is 3.9, and Homebrew Python 3.12 works.
 - The official `wfs-extract` build for your system. The app downloads v1.2.3 and checks its SHA-256. Those binaries stay in `vendor/` on your machine.
 - Your own Wii U backup: an extracted dump with `usr/title/<high-id>/<low-id>/meta/meta.xml`, or an MLC/USB image from your console.
-- Your own `otp.bin` for an encrypted MLC or USB image. A USB image also needs your own `seeprom.bin`. The app passes those paths only to `wfs-extract` on the computer where you run it.
+- Your own `otp.bin` for an encrypted MLC or USB image. A USB image also needs your own `seeprom.bin`. The app passes those paths only to `wfs-extract` and the catalog tool on the computer where you run it.
 
 A full USB or MLC extract can be hundreds of gigabytes. Pick a destination with enough free space.
 
@@ -179,6 +182,8 @@ pytest
 
 ```
 install-linux.sh    Linux installer for apt, dnf, and pacman, including WSL2
+scripts/build-catalog.sh  Builds the catalog tool. It does not download vcpkg.
+native/wfs-catalog/   Catalog tool. It writes title metadata from an image.
 src/wfs_studio/     Python package and GUI
 tests/              Unit tests, using synthetic titles and saves
 CHANGELOG.md        What has been built
@@ -198,7 +203,7 @@ WFS Studio’s own source is MIT. See `LICENSE`.
 
 Other material stays under its own terms and is not relicensed by this MIT grant:
 
-- `third_party/wfs-tools` is MIT, copyright koolkdev. That `LICENSE` file stays with the source. The tools are built on koolkdev’s [wfslib](https://github.com/koolkdev/wfslib). This repository does not vendor that library. The app runs the official release zip.
+- `third_party/wfs-tools` is MIT, copyright koolkdev. That `LICENSE` file stays with the source. The tools are built on koolkdev’s [wfslib](https://github.com/koolkdev/wfslib). This repository does not copy that library into its own tree. `wfslib` stays the nested submodule, checked out when the catalog tool is built. A full extract runs the official release zip. Catalog titles links `wfslib` and writes `meta/meta.xml` and `iconTex.tga`.
 - The official wfs-tools release zips are downloaded when you run the app and kept in `vendor/` on your machine.
 - The [GameTDB](https://www.gametdb.com/) title list and artwork are downloaded when you click Download GameTDB and kept in `cache/` on your machine. They remain GameTDB’s database. GameTDB does not host game dumps.
 - Save backups follow the folder layout of [SaveMii](https://github.com/w3irDv/savemii). SaveMii’s source is not part of this program.

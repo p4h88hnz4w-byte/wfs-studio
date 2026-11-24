@@ -599,3 +599,30 @@ def test_select_all_saves_offers_an_archive(tmp_path: Path, monkeypatch):
     assert len(window._checked_saves()) == 1
     assert window._save_archive == target
     window.close()
+
+
+def test_catalog_button_shows_the_metadata_command(tmp_path: Path, monkeypatch):
+    binary = tmp_path / "wfs-catalog"
+    binary.write_bytes(b"#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("WFS_CATALOG", str(binary))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    assert window.catalog_button.text() == "Catalog titles"
+    window.input_edit.setText(str(tmp_path / "image.bin"))
+    window.output_edit.setText(str(tmp_path / "out"))
+    window.plain_radio.setChecked(True)
+    app.processEvents()
+    catalog_lines = [
+        line for line in window.command_preview.toPlainText().splitlines() if "wfs-catalog" in line
+    ]
+    assert len(catalog_lines) == 1
+    assert "--dump-path" not in catalog_lines[0]
+    assert "--type" in catalog_lines[0]
+    assert "plain" in catalog_lines[0]
+    monkeypatch.delenv("WFS_CATALOG")
+    window._refresh_command()
+    assert "build-catalog.sh" in window.command_preview.toPlainText()
+    window.close()

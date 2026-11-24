@@ -66,9 +66,12 @@ from wfs_studio.copy_job import (
     relative_archive_members,
 )
 from wfs_studio.extract import (
+    CatalogRequest,
     ExtractRequest,
     append_extract_chunk,
     build_args,
+    build_catalog_args,
+    catalog_binary,
     format_command,
     parse_extract_line,
     recovery_warning,
@@ -404,6 +407,8 @@ class MainWindow(QMainWindow):
         self._closing = False
         self._busy = False
         self._process: QProcess | None = None
+        self._catalog_run = False
+        self._catalog_titles = ""
         self._extract_buffer = ""
         self._files_started = 0
         self._cover_generation = 0
@@ -860,9 +865,10 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         intro = QLabel(
-            "Runs the official wfs-extract. It reads the input image or device and writes "
-            "files into the output folder. The input is not modified. SLC and SLCCMPT images "
-            "are not WFS, so this tool cannot open them."
+            "Catalog titles reads /usr/title and writes meta/meta.xml and meta/iconTex.tga, "
+            "so the title list can be opened before a full extract. Start extract runs the "
+            "official wfs-extract and writes the dump path you enter. The input stays as it is. "
+            "SLC and SLCCMPT images are not WFS, so this tool cannot open them."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -923,16 +929,19 @@ class MainWindow(QMainWindow):
 
         self.command_preview = QPlainTextEdit()
         self.command_preview.setReadOnly(True)
-        self.command_preview.setFixedHeight(70)
+        self.command_preview.setFixedHeight(96)
         layout.addWidget(self.command_preview)
 
         action_row = QHBoxLayout()
+        self.catalog_button = QPushButton("Catalog titles")
+        self.catalog_button.clicked.connect(self._start_catalog)
         self.extract_button = QPushButton("Start extract")
         self.extract_button.setObjectName("primary")
         self.extract_button.clicked.connect(self._start_extract)
         self.cancel_extract_button = QPushButton("Stop")
         self.cancel_extract_button.setEnabled(False)
         self.cancel_extract_button.clicked.connect(self._stop_extract)
+        action_row.addWidget(self.catalog_button)
         action_row.addWidget(self.extract_button)
         action_row.addWidget(self.cancel_extract_button)
         action_row.addStretch(1)
@@ -1735,27 +1744,48 @@ class MainWindow(QMainWindow):
             dump_usr_dir=self.recovery_box.isChecked(),
         )
 
+    def _catalog_request(self) -> CatalogRequest | None:
+        binary = catalog_binary(self.root)
+        if binary is None:
+            return None
+        image_type = self._image_type()
+        otp = Path(self.otp_edit.text().strip()) if self.otp_edit.text().strip() else None
+        seeprom = Path(self.seeprom_edit.text().strip()) if self.seeprom_edit.text().strip() else None
+        return CatalogRequest(
+            binary=binary,
+            input_path=Path(self.input_edit.text().strip() or "input"),
+            image_type=image_type,
+            output_path=Path(self.output_edit.text().strip() or "output"),
+            otp=otp if image_type != "plain" else None,
+            seeprom=seeprom if image_type == "usb" else None,
+            dump_usr_dir=self.recovery_box.isChecked(),
+        )
+
     def _refresh_command(self) -> None:
         if not hasattr(self, "command_preview"):
             return
+        lines: list[str] = []
         request = self._current_request()
         if request is None:
-            self.command_preview.setPlainText("Download wfs-extract to see the command.")
-            return
-        lines = [format_command(build_args(request))]
-        warning = recovery_warning(request.dump_path, request.dump_usr_dir)
-        if warning:
-            lines.append(warning)
+            lines.append("Download wfs-extract to see the command.")
+        else:
+            lines.append(format_command(build_args(request)))
+            warning = recovery_warning(request.dump_path, request.dump_usr_dir)
+            if warning:
+                lines.append(warning)
+        catalog = self._catalog_request()
+        if catalog is None:
+            lines.append(
+                "Catalog tool is not built. Run scripts/build-catalog.sh, then the command appears here."
+            )
+        else:
+            lines.append(format_command(build_catalog_args(catalog)))
         self.command_preview.setPlainText("\n".join(lines))
 
-    def _start_extract(self) -> None:
+    def _image_inputs(self) -> tuple[str, Path, str, Path | None, Path | None] | None:
         if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:
-            self._warn("An extract is already running.")
-            return
-        binary = installed_binary(self.data)
-        if binary is None:
-            self._warn("Download wfs-extract first.")
-            return
+            self._warn("A read of the image is already running.")
+            return None
         image_type = self._image_type()
         input_text = self.input_edit.text().strip()
         output_text = self.output_edit.text().strip()
@@ -1763,19 +1793,56 @@ class MainWindow(QMainWindow):
         seeprom_text = self.seeprom_edit.text().strip()
         if not input_text or not output_text:
             self._warn("Choose an input and an output folder.")
-            return
+            return None
         otp = Path(otp_text) if otp_text else None
         seeprom = Path(seeprom_text) if seeprom_text else None
         try:
             validate_extract_paths(Path(input_text), Path(output_text), otp, seeprom, image_type)
         except PathIssue as exc:
             self._warn(str(exc))
+            return None
+        return (
+            input_text,
+            Path(output_text),
+            image_type,
+            otp if image_type != "plain" else None,
+            seeprom if image_type == "usb" else None,
+        )
+
+    def _launch_image_tool(self, args: list[str], *, catalog: bool) -> None:
+        self._catalog_run = catalog
+        self._catalog_titles = ""
+        self.extract_log.clear()
+        self.extract_log.appendPlainText(format_command(args))
+        self._extract_buffer = ""
+        self._files_started = 0
+        self.extract_progress.setRange(0, 0)
+        self.extract_label.setText("Starting")
+        self.extract_button.setEnabled(False)
+        self.catalog_button.setEnabled(False)
+        self.cancel_extract_button.setEnabled(True)
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(self._extract_output)
+        process.finished.connect(self._extract_finished)
+        process.errorOccurred.connect(self._extract_error)
+        self._process = process
+        program, *program_args = args
+        process.start(program, program_args)
+
+    def _start_extract(self) -> None:
+        binary = installed_binary(self.data)
+        if binary is None:
+            self._warn("Download wfs-extract first.")
             return
+        fields = self._image_inputs()
+        if fields is None:
+            return
+        input_text, output, image_type, otp, seeprom = fields
         warning = recovery_warning(self.dump_edit.text(), self.recovery_box.isChecked())
         if warning:
             self._warn(warning)
             return
-        output = Path(output_text)
         extra = ""
         if output_is_nonempty(output):
             extra = "\n\nThe output folder already has files. wfs-extract overwrites files it writes and leaves the rest."
@@ -1795,27 +1862,47 @@ class MainWindow(QMainWindow):
             image_type=image_type,
             output_path=output,
             dump_path=self.dump_edit.text().strip() or "/",
-            otp=otp if image_type != "plain" else None,
-            seeprom=seeprom if image_type == "usb" else None,
+            otp=otp,
+            seeprom=seeprom,
             dump_usr_dir=self.recovery_box.isChecked(),
         )
-        args = build_args(request)
-        self.extract_log.clear()
-        self.extract_log.appendPlainText(format_command(args))
-        self._extract_buffer = ""
-        self._files_started = 0
-        self.extract_progress.setRange(0, 0)
-        self.extract_label.setText("Starting")
-        self.extract_button.setEnabled(False)
-        self.cancel_extract_button.setEnabled(True)
-        process = QProcess(self)
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(self._extract_output)
-        process.finished.connect(self._extract_finished)
-        process.errorOccurred.connect(self._extract_error)
-        self._process = process
-        program, *program_args = args
-        process.start(program, program_args)
+        self._launch_image_tool(build_args(request), catalog=False)
+
+    def _start_catalog(self) -> None:
+        binary = catalog_binary(self.root)
+        if binary is None:
+            self._warn("Build the catalog tool first. From the checkout, run scripts/build-catalog.sh.")
+            return
+        fields = self._image_inputs()
+        if fields is None:
+            return
+        input_text, output, image_type, otp, seeprom = fields
+        extra = ""
+        if output_is_nonempty(output):
+            extra = (
+                "\n\nThe output folder already has files. "
+                "meta.xml and iconTex.tga are replaced when a title is cataloged again."
+            )
+        answer = QMessageBox.question(
+            self,
+            "Catalog titles",
+            "Read /usr/title and write meta/meta.xml and iconTex.tga into the output folder?\n\n"
+            "The input image stays as it is." + extra,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._persist()
+        output.mkdir(parents=True, exist_ok=True)
+        request = CatalogRequest(
+            binary=binary,
+            input_path=Path(input_text),
+            image_type=image_type,
+            output_path=output,
+            otp=otp,
+            seeprom=seeprom,
+            dump_usr_dir=self.recovery_box.isChecked(),
+        )
+        self._launch_image_tool(build_catalog_args(request), catalog=True)
 
     def _extract_output(self) -> None:
         if self._process is None:
@@ -1842,6 +1929,8 @@ class MainWindow(QMainWindow):
             self.extract_label.setToolTip(event["path"])
         elif event["event"] == "start":
             self.extract_label.setText("Reading the filesystem")
+        elif event["event"] == "titles":
+            self._catalog_titles = event["path"]
         elif event["event"] == "error":
             self.extract_label.setText(event["path"])
 
@@ -1855,10 +1944,21 @@ class MainWindow(QMainWindow):
         self.extract_progress.setRange(0, 1)
         self.extract_progress.setValue(1 if code == 0 else 0)
         self.extract_button.setEnabled(True)
+        self.catalog_button.setEnabled(True)
         self.cancel_extract_button.setEnabled(False)
-        if code == 0:
+        catalog = self._catalog_run
+        self._catalog_run = False
+        if code == 0 and catalog:
+            count = self._catalog_titles or "0"
+            self.extract_label.setText(f"Catalog finished. {count} titles, metadata only.")
+            self.extract_log.appendPlainText("Point the Titles tab at the output folder to browse this list.")
+            self.statusBar().showMessage("Catalog finished")
+        elif code == 0:
             self.extract_label.setText(f"Finished. {self._files_started} paths reported.")
             self.statusBar().showMessage("Extract finished")
+        elif catalog:
+            self.extract_label.setText(f"wfs-catalog exited with status {code}.")
+            self.statusBar().showMessage("Catalog failed")
         else:
             self.extract_label.setText(f"wfs-extract exited with status {code}.")
             self.statusBar().showMessage("Extract failed")
@@ -1890,7 +1990,8 @@ class MainWindow(QMainWindow):
             "GameTDB (https://www.gametdb.com/) is a second lookup. "
             "That list and its artwork stay in the cache on this computer.\n\n"
             "wfs-extract is the official MIT-licensed tool by koolkdev, pinned at v1.2.3. "
-            "Those tools are built on koolkdev's wfslib.\n\n"
+            "Those tools are built on koolkdev's wfslib. "
+            "Catalog titles links that library and writes meta/meta.xml and iconTex.tga.\n\n"
             "Save backups use the folder layout from SaveMii "
             "(https://github.com/w3irDv/savemii). This program does not include SaveMii's source.\n\n"
             "The window toolkit is PySide6, which is Qt, under the LGPL. "

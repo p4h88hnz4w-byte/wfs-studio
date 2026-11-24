@@ -12,10 +12,6 @@ import os
 import sys
 from pathlib import Path
 
-# FFmpeg's info log prints the file banner. Warning prints the Opus
-# timestamp note. Neither is a failure. Errors stay visible.
-_AV_LOG_ERROR = 16
-
 MENU_VOLUME = 0.35
 MENU_CREDIT = (
     "Menu music is 8bit Bossa by Joth, CC0, from "
@@ -37,11 +33,13 @@ def menu_track() -> Path | None:
 
 
 def quiet_ffmpeg_logs() -> None:
-    """Hide Qt's FFmpeg banner. The player still reports a real open error."""
-    try:
-        import ctypes
+    """Hide Qt's own FFmpeg category. The player still reports a real open error.
 
-        import PySide6
+    Do not call ``av_log_set_level`` here. On PipeWire, Qt is still starting
+    its FFmpeg copy when the menu track opens, and that call never returns.
+    The window stops answering and the track never starts.
+    """
+    try:
         from PySide6.QtCore import QLoggingCategory
     except ImportError:
         return
@@ -50,20 +48,3 @@ def quiet_ffmpeg_logs() -> None:
     if quiet not in rules:
         rules = f"{rules}\n{quiet}" if rules else quiet
     QLoggingCategory.setFilterRules(rules)
-    lib_dir = Path(PySide6.__file__).resolve().parent / "Qt" / "lib"
-    names = (
-        sorted(lib_dir.glob("libavutil.*.dylib"))
-        + sorted(lib_dir.glob("libavutil.so*"))
-        + sorted(lib_dir.glob("avutil*.dll"))
-    )
-    if not names:
-        return
-    # Use the copy Qt already loaded. Opening a second one deadlocks PipeWire.
-    mode = getattr(ctypes, "RTLD_NOLOAD", None)
-    if mode is None:
-        return
-    try:
-        library = ctypes.CDLL(str(names[-1]), mode=mode)
-        library.av_log_set_level(_AV_LOG_ERROR)
-    except OSError:
-        return

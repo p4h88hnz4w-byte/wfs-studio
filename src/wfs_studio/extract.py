@@ -5,6 +5,7 @@ The runner reads an image and writes a folder. It does not modify the input.
 
 from __future__ import annotations
 
+import os
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,52 @@ def build_args(request: ExtractRequest) -> list[str]:
 
 def format_command(args: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in args)
+
+
+@dataclass(frozen=True)
+class CatalogRequest:
+    """A metadata pass. The dump path is /usr/title, and only two files are written."""
+
+    binary: Path
+    input_path: Path
+    image_type: str
+    output_path: Path
+    otp: Path | None = None
+    seeprom: Path | None = None
+    dump_usr_dir: bool = False
+
+
+def build_catalog_args(request: CatalogRequest) -> list[str]:
+    args = [
+        str(request.binary),
+        "--input",
+        str(request.input_path),
+        "--type",
+        request.image_type,
+        "--output",
+        str(request.output_path),
+    ]
+    if request.image_type != "plain" and request.otp is not None:
+        args.extend(["--otp", str(request.otp)])
+    if request.image_type == "usb" and request.seeprom is not None:
+        args.extend(["--seeprom", str(request.seeprom)])
+    if request.dump_usr_dir:
+        args.append("--dump-usr-dir")
+    return args
+
+
+def catalog_binary(root: Path) -> Path | None:
+    """Return the built catalog tool, or ``WFS_CATALOG`` when that file is executable."""
+    override = os.environ.get("WFS_CATALOG", "").strip()
+    if override:
+        path = Path(override).expanduser()
+        if path.is_file() and os.access(path, os.X_OK):
+            return path
+        return None
+    built = root / "native" / "wfs-catalog" / "build" / "wfs-catalog"
+    if built.is_file() and os.access(built, os.X_OK):
+        return built
+    return None
 
 
 def recovery_warning(dump_path: str, enabled: bool) -> str | None:
@@ -92,6 +139,8 @@ def parse_extract_line(line: str) -> dict[str, str]:
         return {"event": "start", "path": ""}
     if text == "Done!":
         return {"event": "done", "path": ""}
+    if text.startswith("Titles:"):
+        return {"event": "titles", "path": text.split(":", 1)[1].strip()}
     if text.startswith("Error:") or text.startswith("error:"):
         return {"event": "error", "path": text}
     if not text:

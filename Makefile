@@ -10,12 +10,13 @@ APP := $(DIST)/$(APP_NAME).app
 STEM := WFS-Studio-$(VERSION)-macos-arm64
 PYINSTALLER := .venv/bin/pyinstaller
 
-.PHONY: help app zip dmg appimage release clean
+.PHONY: help app zip dmg appimage release clean catalog
 
 help:
 	@printf '%s\n' \
 		'WFS Studio $(VERSION)' \
 		'' \
+		'  make catalog    metadata tool native/wfs-catalog/build/wfs-catalog' \
 		'  make app        Apple Silicon .app in dist/ (this Mac)' \
 		'  make zip        zip of that .app' \
 		'  make dmg        disk image of that .app' \
@@ -25,6 +26,9 @@ help:
 		'' \
 		'GitHub adds the source zip and tar.gz when the release is created.' \
 		'Nothing in dist/ is committed.'
+
+catalog:
+	./scripts/build-catalog.sh
 
 app:
 	@uname -s | grep -qx Darwin || { echo 'make app builds the Apple Silicon app on this Mac.'; exit 1; }
