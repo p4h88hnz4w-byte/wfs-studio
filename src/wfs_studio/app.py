@@ -113,8 +113,10 @@ from wfs_studio.settings import (
     save_settings,
 )
 from wfs_studio.titles import (
+    TitleGroup,
     TitleRecord,
     directory_size,
+    group_titles,
     load_size_cache,
     meta_stamp,
     region_label,
@@ -393,6 +395,7 @@ class MainWindow(QMainWindow):
         self.data = data if data is not None else data_dir(self.root)
         self.settings = load_settings(self.data)
         self.records: list[TitleRecord] = []
+        self.groups: list[TitleGroup] = []
         self.sizes: dict[str, int] = {}
         self.database = load_database(self.data / "cache", self.settings.get("gametdb_zip"))
         self._cover_index: dict[str, str] = {}
@@ -1107,7 +1110,7 @@ class MainWindow(QMainWindow):
         self._title_archive = None
         self._title_archive_declined = False
         self._fill_table()
-        self.statusBar().showMessage(f"{len(self.records)} titles")
+        self.statusBar().showMessage(self._title_count_message())
         if not self.records:
             self.detail_label.setText(
                 "No title folders found. Point the source at a dump that contains usr/title, "
@@ -1151,11 +1154,21 @@ class MainWindow(QMainWindow):
         worker.sized.connect(lambda payload, generation=generation: self._size_ready(payload, generation))
         self._track(worker)
 
+    def _title_count_message(self) -> str:
+        titles = len(self.records)
+        rows = len(self.groups)
+        if rows and rows != titles:
+            noun = "group" if rows == 1 else "groups"
+            return f"{titles} titles in {rows} {noun}"
+        return f"{titles} titles"
+
     def _fill_table(self) -> None:
+        self.groups = group_titles(self.records)
         self.table.setSortingEnabled(False)
         self.table.blockSignals(True)
-        self.table.setRowCount(len(self.records))
-        for row, record in enumerate(self.records):
+        self.table.setRowCount(len(self.groups))
+        for row, group in enumerate(self.groups):
+            record = group.head
             check = QTableWidgetItem()
             check.setFlags(
                 Qt.ItemFlag.ItemIsUserCheckable
@@ -1165,11 +1178,15 @@ class MainWindow(QMainWindow):
             check.setCheckState(Qt.CheckState.Unchecked)
             check.setData(Qt.ItemDataRole.UserRole, row)
             self.table.setItem(row, CHECK_COL, check)
-            kind = QTableWidgetItem(record.kind)
+            kind = QTableWidgetItem(group.kind_label)
             kind.setData(Qt.ItemDataRole.UserRole, row)
             self.table.setItem(row, KIND_COL, kind)
             name = QTableWidgetItem(record.name)
             name.setData(Qt.ItemDataRole.UserRole, str(record.path))
+            name.setData(
+                Qt.ItemDataRole.UserRole + 1,
+                "\n".join(str(member.path) for member in group.members),
+            )
             icon = self._list_icon(record)
             if not icon.isNull():
                 name.setIcon(icon)
@@ -1195,15 +1212,44 @@ class MainWindow(QMainWindow):
             return QIcon()
         return QIcon(pixmap)
 
-    def _record_for_row(self, row: int) -> TitleRecord | None:
+    def _member_paths(self, row: int) -> list[str]:
+        item = self.table.item(row, NAME_COL)
+        if item is None:
+            return []
+        raw = item.data(Qt.ItemDataRole.UserRole + 1)
+        if isinstance(raw, str) and raw:
+            return raw.split("\n")
+        path = item.data(Qt.ItemDataRole.UserRole)
+        return [path] if isinstance(path, str) else []
+
+    def _group_for_row(self, row: int) -> TitleGroup | None:
         item = self.table.item(row, NAME_COL)
         if item is None:
             return None
         path = item.data(Qt.ItemDataRole.UserRole)
-        for record in self.records:
-            if str(record.path) == path:
-                return record
+        for group in self.groups:
+            if str(group.head.path) == path:
+                return group
         return None
+
+    def _record_for_row(self, row: int) -> TitleRecord | None:
+        group = self._group_for_row(row)
+        return None if group is None else group.head
+
+    def _row_for_member(self, path: str) -> int | None:
+        for row in range(self.table.rowCount()):
+            if path in self._member_paths(row):
+                return row
+        return None
+
+    def _group_size(self, paths: list[str]) -> int | None:
+        total = 0
+        for path in paths:
+            size = self.sizes.get(path)
+            if size is None:
+                return None
+            total += size
+        return total
 
     def _size_ready(self, payload: object, generation: int | None = None) -> None:
         if generation is not None and generation != self._size_generation:
@@ -1218,35 +1264,48 @@ class MainWindow(QMainWindow):
             self._size_done += 1
             if self._size_done >= self._size_total:
                 self._sizing = False
-                self.statusBar().showMessage(f"{len(self.records)} titles")
+                self.statusBar().showMessage(self._title_count_message())
             else:
                 self.statusBar().showMessage(f"Sizing {self._size_done} of {self._size_total}")
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, NAME_COL)
-            if item is not None and item.data(Qt.ItemDataRole.UserRole) == path:
-                size_item = self.table.item(row, SIZE_COL)
-                if isinstance(size_item, QTableWidgetItem):
-                    self.table.blockSignals(True)
-                    sorting = self.table.isSortingEnabled()
-                    self.table.setSortingEnabled(False)
-                    size_item.setText(format_bytes(size))
-                    size_item.setData(Qt.ItemDataRole.UserRole, size)
-                    self.table.setSortingEnabled(sorting)
-                    self.table.blockSignals(False)
-                break
+        row = self._row_for_member(path)
+        if row is not None:
+            total = self._group_size(self._member_paths(row))
+            size_item = self.table.item(row, SIZE_COL)
+            if total is not None and isinstance(size_item, QTableWidgetItem):
+                self.table.blockSignals(True)
+                sorting = self.table.isSortingEnabled()
+                self.table.setSortingEnabled(False)
+                size_item.setText(format_bytes(total))
+                size_item.setData(Qt.ItemDataRole.UserRole, total)
+                self.table.setSortingEnabled(sorting)
+                self.table.blockSignals(False)
         self._update_checked_label()
 
     def _apply_filter(self) -> None:
         query = self.search_edit.text().strip().lower()
+        by_path = {str(record.path): record for record in self.records}
         for row in range(self.table.rowCount()):
             if not query:
                 self.table.setRowHidden(row, False)
                 continue
-            values = []
+            values: list[str] = []
             for column in (NAME_COL, ID_COL, PRODUCT_COL, DB_COL, KIND_COL):
                 item = self.table.item(row, column)
-                values.append(item.text().lower() if item is not None else "")
-            self.table.setRowHidden(row, not any(query in value for value in values))
+                values.append(item.text() if item is not None else "")
+            for path in self._member_paths(row):
+                record = by_path.get(path)
+                if record is None:
+                    continue
+                values.extend(
+                    [
+                        record.name,
+                        record.title_id,
+                        record.product_code,
+                        record.gametdb_name,
+                        record.kind,
+                    ]
+                )
+            self.table.setRowHidden(row, not any(query in value.lower() for value in values))
 
     def _bind_select_all(self, widget: QWidget, handler) -> None:
         shortcut = QShortcut(QKeySequence.StandardKey.SelectAll, widget)
@@ -1344,9 +1403,9 @@ class MainWindow(QMainWindow):
             item = self.table.item(row, CHECK_COL)
             if item is None or item.checkState() != Qt.CheckState.Checked:
                 continue
-            record = self._record_for_row(row)
-            if record is not None:
-                chosen.append(record)
+            group = self._group_for_row(row)
+            if group is not None:
+                chosen.extend(group.members)
         return chosen
 
     def _update_checked_label(self) -> None:
@@ -1371,6 +1430,12 @@ class MainWindow(QMainWindow):
             record.product_code or "No product code",
             f"{record.kind} · {region_label(record.region) or 'region unknown'} · version {record.version or '?'}",
         ]
+        group = self._group_for_row(row)
+        if group is not None:
+            for member in group.members:
+                if member.path == record.path:
+                    continue
+                lines.append(f"{member.kind} {member.title_id} · version {member.version or '?'}")
         if record.publisher:
             lines.append(record.publisher)
         if record.gametdb_id:
@@ -1527,6 +1592,7 @@ class MainWindow(QMainWindow):
         self.database = database
         self.db_button.setEnabled(True)
         self.records = annotate(self.records, database)
+        self.groups = group_titles(self.records)
         self._refresh_db_cells()
         self._refresh_db_label()
         self._show_details()

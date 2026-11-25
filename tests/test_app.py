@@ -72,6 +72,53 @@ def test_window_lists_a_scanned_title(tmp_path: Path, monkeypatch):
     window.close()
 
 
+def test_title_list_groups_update_and_dlc(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("wfs_studio.app.fetch_png", lambda *_args, **_kwargs: ("missing", None))
+    game = tmp_path / "dump" / "usr" / "title" / "00050000" / "10112200"
+    update = tmp_path / "dump" / "usr" / "title" / "0005000e" / "10112200"
+    dlc = tmp_path / "dump" / "usr" / "title" / "0005000c" / "10112200"
+    for folder, payload in ((game, b"game"), (update, b"up"), (dlc, b"dlc-data")):
+        (folder / "meta").mkdir(parents=True)
+        (folder / "content").mkdir()
+        (folder / "meta" / "meta.xml").write_text(META, encoding="utf-8")
+        (folder / "content" / "data.bin").write_bytes(payload)
+    (tmp_path / "cache").mkdir()
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(root=tmp_path)
+    window.show()
+    app.processEvents()
+    window.source_edit.setText(str(tmp_path / "dump"))
+    window._scan()
+    app.processEvents()
+    for worker in list(window._workers):
+        worker.wait(5000)
+    app.processEvents()
+
+    assert window.table.rowCount() == 1
+    assert window.table.item(0, 1).text() == "Game + Update + DLC"
+    assert window.table.item(0, 2).text() == "Bayonetta"
+    assert window.table.item(0, 3).text() == "00050000-10112200"
+    assert window._title_count_message() == "3 titles in 1 group"
+    monkeypatch.setattr(
+        "wfs_studio.app.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    window.table.item(0, 0).setCheckState(Qt.CheckState.Checked)
+    chosen = window._checked_records()
+    assert [record.kind for record in chosen] == ["Game", "Update", "DLC"]
+    window.table.setCurrentCell(0, 2)
+    app.processEvents()
+    detail = window.detail_label.text()
+    assert "Update 0005000E-10112200" in detail
+    assert "DLC 0005000C-10112200" in detail
+    window.search_edit.setText("0005000e-10112200")
+    assert not window.table.isRowHidden(0)
+    window.search_edit.setText("not-a-title")
+    assert window.table.isRowHidden(0)
+    window.close()
+
+
 def test_size_worker_emits_byte_counts_past_2gib(tmp_path: Path, monkeypatch):
     size = 3 * 1024**3
     monkeypatch.setattr("wfs_studio.app.directory_size", lambda path, cancel=None: size)

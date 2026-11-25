@@ -104,6 +104,61 @@ class TitleRecord:
         return self.path.resolve().relative_to(self.source_root.resolve())
 
 
+# A retail game, its update, and its DLC share the low id. Other high ids
+# stay on their own rows, including a demo that happens to use the same low id.
+_FAMILY_ORDER = {
+    "00050000": 0,
+    "0005000e": 1,
+    "0005000c": 2,
+}
+
+
+@dataclass(frozen=True)
+class TitleGroup:
+    """One title-list row. A lone title is a group of one."""
+
+    members: tuple[TitleRecord, ...]
+
+    @property
+    def head(self) -> TitleRecord:
+        return self.members[0]
+
+    @property
+    def kind_label(self) -> str:
+        return " + ".join(member.kind for member in self.members)
+
+
+def group_titles(records: list[TitleRecord]) -> list[TitleGroup]:
+    """Put a base game, its update, and its DLC on one row.
+
+    Matching uses the low title id. A demo, system title, or any other kind
+    stays alone. An update or DLC with no base game still shares a row when
+    both are present.
+    """
+    families: dict[str, list[TitleRecord]] = {}
+    alone: list[TitleRecord] = []
+    for record in records:
+        low = record.low_id.lower()
+        if low and record.high_id.lower() in _FAMILY_ORDER:
+            families.setdefault(low, []).append(record)
+        else:
+            alone.append(record)
+    groups = [
+        TitleGroup(
+            tuple(
+                sorted(
+                    members,
+                    key=lambda item: (_FAMILY_ORDER[item.high_id.lower()], item.title_id),
+                )
+            )
+        )
+        for members in families.values()
+    ]
+    groups.extend(TitleGroup((record,)) for record in alone)
+    groups.sort(key=lambda group: (group.head.name.lower(), group.head.kind, group.head.title_id))
+    return groups
+
+
 def load_meta_text(path: Path) -> str:
     raw = path.read_bytes()
     if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):

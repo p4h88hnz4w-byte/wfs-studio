@@ -17,11 +17,11 @@ The first time, create the virtualenv as in Setup below.
 ## Titles tab
 
 1. Choose the extracted dump, a `usr/title` folder, or one title folder.
-2. Scan. Names come from `longname_*` in `meta/meta.xml`. Each row shows that title's `meta/iconTex.tga` beside the name. The Region column reads the title's region bits: USA is NTSC-U, EUR is PAL (Europe, and Australian consoles, which use the EUR region), and JPN is NTSC-J. USA+EUR means the title is allowed on both. The folder layout is the same for each, and the title id keeps those copies apart. In a code such as `WUP-P-APKE`, the `P` is the package type. The region letter is the `E` in `APKE`. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
+2. Scan. Names come from `longname_*` in `meta/meta.xml`. A game, its update, and its DLC that share the same low title id appear on one row. The Kind column lists the parts that are present, and the size is their total. Checking that row selects every part. A demo or a system title stays on its own row. Each row shows the base title's `meta/iconTex.tga` beside the name. The Region column reads the title's region bits: USA is NTSC-U, EUR is PAL (Europe, and Australian consoles, which use the EUR region), and JPN is NTSC-J. USA+EUR means the title is allowed on both. The folder layout is the same for each, and the title id keeps those copies apart. In a code such as `WUP-P-APKE`, the `P` is the package type. The region letter is the `E` in `APKE`. Sizes are measured a few titles at a time and remembered in `cache/title-sizes.json`. Recount sizes measures them again.
 3. Download GameTDB, or choose a `wiiutdb.zip` you already have. The zip stays compressed in `cache/wiiutdb.zip`. The app reads `wiiutdb.xml` from inside it. A plain `cache/wiiutdb.txt` is used only when no zip is available. A product code such as `WUP-P-APKE` matches GameTDB id `APKE01`. Banner zip reads `<id>.png` from a cover archive you already have. Without one, disc pictures are saved under `cache/covers/` after a download. If there is no banner and no disc, the pane shows `meta/iconTex.tga` from that title. A disc that arrives later replaces the icon.
 4. Check the titles, or use Select all (the button, or Edit → Select all). Select all checks every title, including rows hidden by the filter. Check visible checks only the rows on screen. Checking every title asks where to write an archive: a zip on a Mac, and 7z or a bzip2 tar on Linux. The archive is written after the copy and sits outside the destination folder. A partial selection copies only the checked titles.
 
-Game data copy is on by default. Each title is written to `Title Name [00050000-lowid]/`, and `usr/save` is not included. The window then checks that the destination file count and byte total match the source. Turn the option off to keep the path relative to the scanned folder, for example `usr/title/00050000/101DF400/...`. Files that already exist at the destination with the same size are skipped. A different size is replaced.
+Game data copy is on by default. Each title is written to `Title Name [00050000-lowid]/`, and `usr/save` is not included. A grouped row still writes one folder per part, so the update and the DLC stay out of the base game's folder. The window then checks that the destination file count and byte total match the source. Turn the option off to keep the path relative to the scanned folder, for example `usr/title/00050000/101DF400/...`. Files that already exist at the destination with the same size are skipped. A different size is replaced.
 
 The copy shows a progress bar and the path currently being written. Stopping deletes the unfinished temporary file (`.wfs-studio-partial`) and leaves completed files where they are.
 
@@ -70,7 +70,7 @@ SLC and SLCCMPT images are not WFS. This tool cannot open `slc.bin` or `slccmpt.
 
 ## Menu music
 
-The window loops 8bit Bossa by Joth, CC0. File → Menu music turns it off, and that choice is remembered. Closing the window does not wait on the player.
+The window loops 8bit Bossa by Joth, CC0. The ending plays through, and a 0.3 second join at the start of the track carries the loop back to the opening. File → Menu music turns it off, and that choice is remembered. Closing the window does not wait on the player.
 
 On Linux, File → Audio backend chooses PulseAudio or PipeWire. PulseAudio is the default. The choice is used the next time the window opens. If a PipeWire choice never opens the window, start that one run with `QT_AUDIO_BACKEND=PulseAudio`. The terminal can still print FFmpeg's file banner when the track starts. That line is not a failure.
 
@@ -207,6 +207,6 @@ Other material stays under its own terms and is not relicensed by this MIT grant
 - The official wfs-tools release zips are downloaded when you run the app and kept in `vendor/` on your machine.
 - The [GameTDB](https://www.gametdb.com/) title list and artwork are downloaded when you click Download GameTDB and kept in `cache/` on your machine. They remain GameTDB’s database. GameTDB does not host game dumps.
 - Save backups follow the folder layout of [SaveMii](https://github.com/w3irDv/savemii). SaveMii’s source is not part of this program.
-- Menu music is [8bit Bossa](https://opengameart.org/content/bossa-nova) by Joth, dedicated to the public domain under CC0. The app ships an Opus encode of that track. The original MP3 is not included.
+- Menu music is [8bit Bossa](https://opengameart.org/content/bossa-nova) by Joth, dedicated to the public domain under CC0. The app ships an Opus encode of that track, with the loop join at the start of the file. The original MP3 is not included.
 - PySide6 is the window toolkit. It is Qt, available under the LGPL. A source checkout installs it with pip. A frozen build keeps those Qt libraries replaceable and copies `packaging/licenses/` into the app. WFS Studio’s own source stays MIT.
 - NAND images, extracted titles, `otp.bin`, and `seeprom.bin` stay on the console owner’s computer. The app only receives the paths you choose.

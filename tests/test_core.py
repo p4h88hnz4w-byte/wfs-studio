@@ -47,6 +47,7 @@ from wfs_studio.settings import load_settings, save_settings
 from wfs_studio.titles import (
     directory_size,
     format_region,
+    group_titles,
     load_meta_text,
     load_size_cache,
     meta_stamp,
@@ -101,6 +102,26 @@ def test_scan_reads_names_regions_and_related_updates(tmp_path: Path):
     assert by_kind["Game"].product_code == "WUP-P-APKE"
     assert by_kind["Game"].publisher == "Nintendo"
     assert by_kind["Update"].name == "Update for POKKÉN TOURNAMENT Deluxe"
+
+
+def test_group_titles_joins_a_game_with_its_update_and_dlc(tmp_path: Path):
+    write_title(tmp_path, "00050000", "101df400", META, b"abc")
+    write_title(tmp_path, "0005000e", "101df400", "<menu></menu>", b"upd")
+    write_title(tmp_path, "0005000c", "101DF400", "<menu></menu>", b"dlc")
+    write_title(tmp_path, "00050002", "101df400", META.replace("POKKÉN TOURNAMENT\nDeluxe", "Pokken Demo"), b"demo")
+    write_title(tmp_path, "0005000e", "10111100", "<menu></menu>", b"orphan-upd")
+    write_title(tmp_path, "0005000c", "10111100", "<menu></menu>", b"orphan-dlc")
+    groups = group_titles(scan_titles(tmp_path))
+    family = next(group for group in groups if group.kind_label == "Game + Update + DLC")
+    assert family.head.low_id == "101df400"
+    assert [member.kind for member in family.members] == ["Game", "Update", "DLC"]
+    assert family.head.name == "POKKÉN TOURNAMENT Deluxe"
+    demo = next(group for group in groups if group.head.kind == "Demo")
+    assert demo.kind_label == "Demo"
+    assert demo.head.low_id == "101df400"
+    orphan = next(group for group in groups if group.head.low_id == "10111100")
+    assert orphan.kind_label == "Update + DLC"
+    assert orphan.head.kind == "Update"
 
 
 def test_pal_and_ntsc_j_titles_scan_and_match_gametdb(tmp_path: Path):

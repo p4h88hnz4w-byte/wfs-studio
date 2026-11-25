@@ -2,6 +2,15 @@
 
 Work so far on WFS Studio. Versions 0.2.0 through 0.4.0 were built locally on top of tag `v0.1` and saved together in the 0.4.0 commit. The public repository is [p4h88hnz4w-byte/wfs-studio](https://github.com/p4h88hnz4w-byte/wfs-studio).
 
+## 0.7.9
+
+The title list groups a base game with its update and DLC.
+
+- A game (`00050000`), an update (`0005000e`), and DLC (`0005000c`) that share a low title id use one row. The Kind column names the parts that are present. The size is the sum of those parts. A demo, a system title, or another kind stays on its own row.
+- Checking the row selects every part. Game data copy still writes each part to its own folder. The source is unchanged.
+- The menu loop no longer mixes the last two seconds with the opening. A 0.3 second equal-power join sits at the start of the track, and the ending plays on its own.
+- An update or DLC with no base game still shares a row when they have the same low id. Search matches any part in the group, including the update or DLC title id.
+
 ## 0.7.8
 
 Catalog titles reads `/usr/title` from an image and writes `meta/meta.xml` and `meta/iconTex.tga`.

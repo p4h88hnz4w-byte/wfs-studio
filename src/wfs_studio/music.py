@@ -2,8 +2,9 @@
 
 ``assets/menu.opus`` is Joth's "8bit Bossa" (CC0,
 https://opengameart.org/content/bossa-nova). The original MP3 is not in
-this repo. This file is 48 kHz Opus encoded at 64 kbps. A two-second
-crossfade joins the ending to the opening, so a player loop does not click.
+this repo. This file is 48 kHz Opus encoded at 64 kbps. A 0.3 second
+equal-power join sits at the start, so the player loop continues into the
+opening. The ending itself is not mixed with the opening.
 """
 
 from __future__ import annotations
